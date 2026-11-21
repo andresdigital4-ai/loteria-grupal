@@ -1,25 +1,46 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function roomPath(code) { return /databases/$(database)/documents/rooms/$(code); }
-    function playerPath(code, uid) { return /databases/$(database)/documents/rooms/$(code)/players/$(uid); }
-    function roomExists(code) { return exists(roomPath(code)); }
-    function roomExistsAfter(code) { return existsAfter(roomPath(code)); }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roomPath(code) {
+      return /databases/$(database)/documents/rooms/$(code);
+    }
+
+    function playerPath(code, uid) {
+      return /databases/$(database)/documents/rooms/$(code)/players/$(uid);
+    }
+
+    function roomExists(code) {
+      return exists(roomPath(code));
+    }
+
+    function roomExistsAfter(code) {
+      return existsAfter(roomPath(code));
+    }
+
     function isHost(code) {
-      return signedIn() && roomExists(code) &&
-        get(roomPath(code)).data.hostUid == request.auth.uid;
+      return signedIn()
+        && roomExists(code)
+        && get(roomPath(code)).data.hostUid == request.auth.uid;
     }
+
     function isCaller(code) {
-      return signedIn() && roomExists(code) &&
-        get(roomPath(code)).data.callerUid == request.auth.uid;
+      return signedIn()
+        && roomExists(code)
+        && get(roomPath(code)).data.callerUid == request.auth.uid;
     }
 
-
-    // Sala general: apunta a la única partida que todos pueden encontrar.
+    // Sala general: una sola partida activa.
     match /system/{documentId} {
+
       allow read: if signedIn();
-      allow create, update: if signedIn()
+
+      allow create: if signedIn()
         && documentId == 'activeGame'
         && request.resource.data.keys().hasOnly(['roomCode','hostUid','updatedAt'])
         && request.resource.data.roomCode is string
@@ -28,12 +49,37 @@ service cloud.firestore {
         && existsAfter(roomPath(request.resource.data.roomCode))
         && getAfter(roomPath(request.resource.data.roomCode)).data.hostUid == request.auth.uid
         && getAfter(roomPath(request.resource.data.roomCode)).data.status == 'waiting';
+
+      allow update: if signedIn()
+        && documentId == 'activeGame'
+        && request.resource.data.keys().hasOnly(['roomCode','hostUid','updatedAt'])
+        && request.resource.data.roomCode is string
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.updatedAt is timestamp
+        && existsAfter(roomPath(request.resource.data.roomCode))
+        && getAfter(roomPath(request.resource.data.roomCode)).data.hostUid == request.auth.uid
+        && getAfter(roomPath(request.resource.data.roomCode)).data.status == 'waiting'
+        && (
+          !exists(roomPath(resource.data.roomCode))
+          || get(roomPath(resource.data.roomCode)).data.status == 'finished'
+        );
+
       allow delete: if false;
     }
 
+    // Partidas.
     match /rooms/{code} {
+
       allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['hostUid','callerUid','callerName','status','drawn','lastNumber','createdAt'])
+        && request.resource.data.keys().hasOnly([
+          'hostUid',
+          'callerUid',
+          'callerName',
+          'status',
+          'drawn',
+          'lastNumber',
+          'createdAt'
+        ])
         && request.resource.data.hostUid == request.auth.uid
         && request.resource.data.callerUid == null
         && request.resource.data.callerName == ''
@@ -46,7 +92,10 @@ service cloud.firestore {
       allow read: if signedIn();
 
       allow update: if signedIn() && (
-        (isHost(code)
+
+        // El anfitrión inicia la partida.
+        (
+          isHost(code)
           && resource.data.status == 'waiting'
           && request.resource.data.status == 'active'
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -54,9 +103,14 @@ service cloud.firestore {
           && request.resource.data.callerUid is string
           && exists(playerPath(code, request.resource.data.callerUid))
           && get(playerPath(code, request.resource.data.callerUid)).data.name == request.resource.data.callerName
-          && request.resource.data.startedAt is timestamp)
+          && request.resource.data.startedAt is timestamp
+        )
+
         ||
-        (isCaller(code)
+
+        // El tirador extrae una bolilla.
+        (
+          isCaller(code)
           && resource.data.status == 'active'
           && request.resource.data.status == 'active'
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -69,9 +123,14 @@ service cloud.firestore {
           && request.resource.data.lastNumber >= 1
           && request.resource.data.lastNumber <= 90
           && request.resource.data.drawn.hasAny([request.resource.data.lastNumber])
-          && !resource.data.drawn.hasAny([request.resource.data.lastNumber]))
+          && !resource.data.drawn.hasAny([request.resource.data.lastNumber])
+        )
+
         ||
-        (isCaller(code)
+
+        // El tirador declara el final de la partida.
+        (
+          isCaller(code)
           && resource.data.status == 'active'
           && request.resource.data.status == 'finished'
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -79,18 +138,29 @@ service cloud.firestore {
           && request.resource.data.winnerUid is string
           && exists(playerPath(code, request.resource.data.winnerUid))
           && get(playerPath(code, request.resource.data.winnerUid)).data.name == request.resource.data.winnerName
-          && request.resource.data.finishedAt is timestamp)
+          && request.resource.data.finishedAt is timestamp
+        )
       );
 
-      allow delete: if isHost(code) && resource.data.status == 'waiting';
+      allow delete: if isHost(code)
+        && resource.data.status == 'waiting';
 
+      // Jugadores.
       match /players/{playerId} {
+
         allow read: if signedIn();
+
         allow create: if signedIn()
           && playerId == request.auth.uid
           && roomExistsAfter(code)
           && getAfter(roomPath(code)).data.status == 'waiting'
-          && request.resource.data.keys().hasOnly(['uid','name','cards','cardCount','joinedAt'])
+          && request.resource.data.keys().hasOnly([
+            'uid',
+            'name',
+            'cards',
+            'cardCount',
+            'joinedAt'
+          ])
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.name is string
           && request.resource.data.name.size() >= 1
@@ -101,12 +171,18 @@ service cloud.firestore {
           && request.resource.data.cardCount <= 3
           && request.resource.data.cards.size() == request.resource.data.cardCount
           && request.resource.data.joinedAt is timestamp;
+
         allow update: if false;
-        allow delete: if isHost(code) && get(roomPath(code)).data.status == 'waiting';
+
+        allow delete: if isHost(code)
+          && get(roomPath(code)).data.status == 'waiting';
       }
 
+      // Reservas de cartones únicos.
       match /cardReservations/{cardKey} {
+
         allow read: if signedIn();
+
         allow create: if signedIn()
           && request.resource.data.keys().hasOnly(['uid','card','createdAt'])
           && request.resource.data.uid == request.auth.uid
@@ -116,8 +192,11 @@ service cloud.firestore {
           && request.resource.data.createdAt is timestamp
           && existsAfter(playerPath(code, request.auth.uid))
           && getAfter(playerPath(code, request.auth.uid)).data.cards.hasAny([request.resource.data.card]);
+
         allow update: if false;
-        allow delete: if isHost(code) && get(roomPath(code)).data.status == 'waiting';
+
+        allow delete: if isHost(code)
+          && get(roomPath(code)).data.status == 'waiting';
       }
     }
   }
