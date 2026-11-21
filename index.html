@@ -55,7 +55,7 @@ footer{text-align:center;color:#bdb9ef;font-size:12px;padding:18px}
 <div class="row" style="margin-top:14px"><button id="install" class="gold" type="button">📲 Instalar aplicación</button><button id="shareApp" class="purple" type="button">🔗 Compartir aplicación</button></div>
 </section>
 <section id="game" class="hidden">
-<div class="panel"><div class="row"><h2>🎯 PARTIDA EN JUEGO</h2><button id="soundToggle" class="gold" type="button">🔊 Sonido activado</button></div><div class="status"><span id="roomLabel" class="hidden"></span><span id="roomState">Esperando jugadores</span></div><div id="playersList" class="status">Cargando participantes…</div><button id="begin" class="green" style="width:100%;margin:8px 0">🎲 ELEGIR TIRADOR Y COMENZAR</button><div class="tirador"><strong>TIRADOR ELEGIDO POR EL SISTEMA</strong><span id="caller">—</span></div><div id="msg" class="status">Preparados… ¡mucha suerte!</div></div>
+<div class="panel"><div class="row"><h2>🎯 PARTIDA EN JUEGO</h2><button id="soundToggle" class="gold" type="button">🔊 Sonido activado</button></div><div class="status"><span id="roomLabel" class="hidden"></span><span id="roomState">Esperando jugadores</span></div><div id="playersList" class="status">Cargando participantes…</div><button id="begin" class="green" style="width:100%;margin:8px 0">🎲 ELEGIR TIRADOR Y COMENZAR</button><button id="recoverCaller" class="gold hidden" type="button" style="width:100%;margin:8px 0">🔄 RECUPERAR TIRADOR DESCONECTADO</button><div class="tirador"><strong>TIRADOR ELEGIDO POR EL SISTEMA</strong><span id="caller">—</span></div><div id="msg" class="status">Preparados… ¡mucha suerte!</div></div>
 <div class="panel"><h2>🎱 Bolillas extraídas</h2><div id="lastballs" class="drawnballs"><span class="hint">Todavía no salió ninguna bolilla</span></div><div class="row" style="margin-top:14px"><button id="draw" class="green" disabled>EXTRAER 1 BOLILLA</button><button id="back" class="purple">SALIR DE LA PARTIDA</button></div><div class="hint">Solo el tirador elegido puede extraer bolillas. No se repiten números.</div></div>
 <div class="panel"><h2>🔢 Tablero del 1 al 90</h2><div id="board" class="board"></div></div>
 <div class="panel"><h2>🏆 Mis cartones</h2><div id="tickets" class="cards"></div></div>
@@ -78,7 +78,7 @@ const firebaseConfig = {
 };
 const app=initializeApp(firebaseConfig), auth=getAuth(app), db=getFirestore(app);
 const $=id=>document.getElementById(id);
-let uid=null, qty=1, roomCode=null, roomData=null, players=[], myCards=[], drawn=[], caller='', isHost=false, unsubRoom=null, unsubPlayers=null, unsubLobby=null, unsubActiveRoom=null, activeRoomCode=null, activeRoomStatus=null, canRejoinActive=false, soundEnabled=true, audioCtx=null, finishing=false, lineWon=false, fullWon=false, bingoWon=false, lastSpokenNumber=null, hasInitialRoomSnapshot=false;
+let uid=null, qty=1, roomCode=null, roomData=null, players=[], myCards=[], drawn=[], caller='', isHost=false, unsubRoom=null, unsubPlayers=null, unsubLobby=null, unsubActiveRoom=null, activeRoomCode=null, activeRoomStatus=null, canRejoinActive=false, soundEnabled=true, audioCtx=null, finishing=false, lineWon=false, fullWon=false, bingoWon=false, announcedLineWinners=new Set(), announcedFullWinners=new Set(), lastSpokenNumber=null, hasInitialRoomSnapshot=false;
 const roomRef=()=>doc(db,'rooms',roomCode);
 const lobbyRef=()=>doc(db,'system','activeGame');
 const playerRef=(code,id)=>doc(db,'rooms',code,'players',id);
@@ -196,7 +196,7 @@ async function joinRoom(){
   try{roomCode=code;myCards=await allocateCards(code,name,qty);isHost=false;await enterRoom(code)}catch(e){console.error(e);alert(e.message)}finally{$('join').disabled=false;renderLobby()}
 }
 async function enterRoom(code){
-  lineWon=false;fullWon=false;bingoWon=false;lastSpokenNumber=null;hasInitialRoomSnapshot=false;roomCode=code;$('roomLabel').textContent=code;$('setup').classList.add('hidden');$('game').classList.remove('hidden');
+  lineWon=false;fullWon=false;bingoWon=false;announcedLineWinners=new Set();announcedFullWinners=new Set();lastSpokenNumber=null;hasInitialRoomSnapshot=false;roomCode=code;$('roomLabel').textContent=code;$('setup').classList.add('hidden');$('game').classList.remove('hidden');
   const url=new URL(location.href);url.searchParams.set('room',code);history.replaceState({},'',url);
   if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();
   unsubRoom=onSnapshot(roomRef(),snap=>{
@@ -217,40 +217,128 @@ async function enterRoom(code){
 }
 function renderPlayers(){ $('playersList').innerHTML='<strong>Participantes ('+players.length+')</strong><br>'+players.map(p=>'👤 '+escapeHtml(p.name)+(p.uid===roomData?.hostUid?' ⭐ Anfitrión':'')).join('<br>'); }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function renderRoom(){if(!roomData)return;$('caller').textContent=caller||'Se elegirá al comenzar';$('roomState').textContent=roomData.status==='waiting'?'Esperando jugadores':roomData.status==='active'?'Partida en curso':'Partida terminada';$('begin').classList.toggle('hidden',!(uid===roomData.hostUid&&roomData.status==='waiting'));$('draw').disabled=!(roomData.status==='active'&&roomData.callerUid===uid);$('msg').textContent=roomData.status==='waiting'?'Compartí el enlace de invitación para que se unan los participantes.':roomData.status==='finished'?'¡La partida terminó! Ganador: '+(roomData.winnerName||''):roomData.callerUid===uid?'¡Es tu turno! Podés extraer una bolilla.':'El tirador está jugando. Esperá tu turno.';
+function renderRoom(){if(!roomData)return;$('caller').textContent=caller||'Se elegirá al comenzar';$('roomState').textContent=roomData.status==='waiting'?'Esperando jugadores':roomData.status==='active'?'Partida en curso':'Partida terminada';$('begin').classList.toggle('hidden',!(uid===roomData.hostUid&&roomData.status==='waiting'));$('recoverCaller').classList.toggle('hidden',!(uid===roomData.hostUid&&roomData.status==='active'&&roomData.callerUid!==uid));$('draw').disabled=!(roomData.status==='active'&&roomData.callerUid===uid&&drawn.length<90);$('msg').textContent=roomData.status==='waiting'?'Compartí el enlace de invitación para que se unan los participantes.':roomData.status==='finished'?'¡La partida terminó! Ganador(es): '+(roomData.winnerName||''):roomData.callerUid===uid?'¡Es tu turno! Podés extraer una bolilla.':'El tirador está jugando. Esperá tu turno.';
   $('board').innerHTML=Array.from({length:90},(_,i)=>`<div class="ball ${drawn.includes(i+1)?'drawn':''}">${i+1}</div>`).join('');
   $('lastballs').innerHTML=drawn.length?drawn.slice(-3).map(n=>`<div class="bigball">${n}</div>`).join(''):'<span class="hint">Todavía no salió ninguna bolilla</span>';renderTickets();checkPrizes();}
 function renderTickets(){ $('tickets').innerHTML='';myCards.forEach((g,i)=>{const d=document.createElement('div');d.className='ticket';d.innerHTML=`<h3>CARTÓN ${i+1}</h3><div class="gridticket">${g.flat().map(n=>`<div class="cell ${n===null?'blank':''} ${n&&drawn.includes(n)?'hit':''}">${n??''}</div>`).join('')}</div>`;$('tickets').appendChild(d)}); }
 async function beginGame(){if(!roomData||uid!==roomData.hostUid||roomData.status!=='waiting')return;if(players.length<1){alert('Todavía no hay participantes.');return}const chosen=players[Math.floor(Math.random()*players.length)];try{await updateDoc(roomRef(),{callerUid:chosen.uid,callerName:chosen.name,status:'active',startedAt:serverTimestamp()})}catch(e){alert('No se pudo iniciar: '+e.message)}}
+async function recoverCaller(){
+  if(!roomData||uid!==roomData.hostUid||roomData.status!=='active'||roomData.callerUid===uid)return;
+  const previousName=roomData.callerName||'el tirador actual';
+  if(!confirm('¿Confirmás que '+previousName+' se desconectó o no puede continuar? Se elegirá otro tirador al azar y se conservarán todas las bolillas y cartones.'))return;
+  const candidates=players.filter(p=>p.uid&&p.uid!==roomData.callerUid);
+  if(!candidates.length){alert('No hay otro participante disponible para tomar el turno.');return;}
+  const chosen=candidates[Math.floor(Math.random()*candidates.length)];
+  try{
+    await runTransaction(db,async tx=>{
+      const snap=await tx.get(roomRef());
+      if(!snap.exists())throw new Error('La partida ya no existe.');
+      const current=snap.data();
+      if(current.status!=='active'||current.hostUid!==uid)throw new Error('La partida cambió o ya no sos el anfitrión.');
+      if(current.callerUid===uid)throw new Error('El anfitrión ya es el tirador.');
+      tx.update(roomRef(),{callerUid:chosen.uid,callerName:chosen.name,callerChangedAt:serverTimestamp()});
+    });
+    alert('¡Turno recuperado! '+chosen.name+' es el nuevo tirador.');
+    speak('Atención. El nuevo tirador es '+chosen.name);
+  }catch(e){console.error(e);alert('No se pudo recuperar el turno: '+e.message);}
+}
 async function draw(){if(!roomData||roomData.status!=='active'||roomData.callerUid!==uid)return;const available=Array.from({length:90},(_,i)=>i+1).filter(n=>!drawn.includes(n));if(!available.length)return;const number=available[Math.floor(Math.random()*available.length)];try{await runTransaction(db,async tx=>{const snap=await tx.get(roomRef());if(!snap.exists())throw new Error('La partida no existe');const data=snap.data();if(data.status!=='active'||data.callerUid!==uid)throw new Error('Ya no es tu turno');const current=data.drawn||[];if(current.includes(number))throw new Error('Ese número ya salió');tx.update(roomRef(),{drawn:[...current,number],lastNumber:number});});}catch(e){console.error(e);$('msg').textContent=e.message}}
 function cardNumbers(card){return (card||[]).flat().filter(n=>Number.isInteger(n)&&n>=1&&n<=90)}
 function isFullCard(card){const nums=cardNumbers(card);return nums.length===15&&nums.every(n=>drawn.includes(n))}
-function findGrandWinner(){for(const p of players){const cards=p.cards||[];if(cards.length&&cards.every(isFullCard))return p}return null}
-function findFullCardWinner(){for(const p of players){if((p.cards||[]).some(isFullCard))return p}return null}
-function findLineWinner(){for(const p of players){for(const card of (p.cards||[])){const rows=(card||[]).filter(row=>row.filter(n=>Number.isInteger(n)&&n>=1&&n<=90).length===5);if(rows.some(row=>row.filter(n=>Number.isInteger(n)&&n>=1&&n<=90).every(n=>drawn.includes(n))))return p}}return null}
+// Regla final: con dos o más participantes de 3 cartones, el bingo exige
+// que uno complete los tres. Si hay menos de dos, alcanza con llenar un cartón.
+function findFullCardWinners(){return players.filter(p=>(p.cards||[]).some(isFullCard))}
+function findGrandWinners(){
+  const threeCardPlayers=players.filter(p=>(p.cards||[]).length===3);
+  if(threeCardPlayers.length>=2)return threeCardPlayers.filter(p=>p.cards.every(isFullCard));
+  return findFullCardWinners();
+}
+function findLineWinners(){
+  return players.filter(p=>(p.cards||[]).some(card=>{
+    const rows=(card||[]).filter(row=>row.filter(n=>Number.isInteger(n)&&n>=1&&n<=90).length===5);
+    return rows.some(row=>row.filter(n=>Number.isInteger(n)&&n>=1&&n<=90).every(n=>drawn.includes(n)));
+  }));
+}
 function confetti(big=false){const count=big?115:42;const colors=['#ffe34d','#ff4f78','#43e6a0','#56c9ff','#c77bff','#ffffff'];for(let i=0;i<count;i++){const el=document.createElement('i');el.className='confetti';el.style.left=Math.random()*100+'vw';el.style.background=colors[i%colors.length];el.style.animationDuration=(2.2+Math.random()*2.5)+'s';el.style.animationDelay=(Math.random()*.8)+'s';el.style.transform='rotate('+Math.random()*360+'deg)';document.body.appendChild(el);setTimeout(()=>el.remove(),5500)}}
 function cheer(kind){if(!soundEnabled)return;const notes=kind==='triple'?[523,659,784,1047,784,1047,1319]:kind==='full'?[523,659,784,988]:[587,740,880];notes.forEach((n,i)=>tone(n,i*.14,.22,'triangle',.14));if(kind==='triple'){[0,.22,.44,.66,.88].forEach((t,i)=>tone([784,988,1175,1319,1568][i],t,.38,'sawtooth',.045))}}
-function showPrize(level,title,winnerName,final=false,cardCount=0){const box=$('prizebox');const safeName=escapeHtml(winnerName||'');box.innerHTML=`<div>${title}</div><span class="winner-name">🏆 ${safeName} 🏆</span><div>${final?'¡FELICITACIONES, GRAN GANADOR!':'¡FELICITACIONES!'}</div>`;box.classList.remove('hidden');confetti(final);cheer(level);const message=level==='line'?`¡Tenemos línea! ¡Ganó ${winnerName}! ¡Felicitaciones!`:level==='full'?`¡Tenemos cartón lleno! ¡Ganó ${winnerName}! ¡Felicitaciones!`:cardCount===3?`¡Atención! ¡Tenemos bingo de tres cartones! ¡Ganó ${winnerName}! ¡Felicitaciones, campeón!`:`¡Atención! ¡Tenemos bingo completo! ¡Ganó ${winnerName}! ¡Felicitaciones, campeón!`;setTimeout(()=>speak(message),1200);if(final){$('celebrateTitle').textContent=cardCount===3?'¡BINGO DE TRES CARTONES!':'¡BINGO COMPLETO!';$('championName').textContent=winnerName||'';$('celebrateText').textContent=cardCount===3?'¡COMPLETASTE LOS TRES CARTONES!':'¡COMPLETASTE TODOS TUS CARTONES!';$('celebration').classList.add('show')}}
+function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=false,final=false,fallbackName=''}){
+  const cleanLine=[...new Set(lineWinners.map(p=>p.name).filter(Boolean))];
+  const cleanFull=[...new Set(fullWinners.map(p=>p.name).filter(Boolean))];
+  const cleanFinal=[...new Set(finalWinners.map(p=>p.name).filter(Boolean))];
+  const box=$('prizebox');
+  const section=(title,names)=>names.length?`<div style="margin:8px 0"><strong>${title}</strong>${names.map(n=>`<span class="winner-name">🏆 ${escapeHtml(n)} 🏆</span>`).join('')}</div>`:'';
+  box.innerHTML=section('🥳 ¡LÍNEA COMPLETA!',cleanLine)+section('🎉 ¡CARTÓN LLENO!',cleanFull)+section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡BINGO / CARTÓN LLENO!',cleanFinal);
+  if(!box.innerHTML&&fallbackName)box.innerHTML=section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡CARTÓN LLENO!',[fallbackName]);
+  box.classList.remove('hidden');
+  confetti(final);cheer(final?(isTriple?'triple':'full'):cleanFull.length?'full':'line');
+  const speech=[];
+  if(cleanLine.length)speech.push('Línea completa: '+cleanLine.join(', '));
+  if(cleanFull.length)speech.push('Cartón lleno: '+cleanFull.join(', '));
+  if(cleanFinal.length)speech.push((isTriple?'Bingo de tres cartones: ':'Bingo: ')+cleanFinal.join(', '));
+  if(!speech.length&&fallbackName)speech.push('Ganador: '+fallbackName);
+  if(speech.length)setTimeout(()=>speak(speech.join('. ')+'. ¡Felicitaciones!'),900);
+  if(final){
+    $('celebrateTitle').textContent=isTriple?'¡BINGO DE TRES CARTONES!':'¡BINGO COMPLETO!';
+    $('championName').innerHTML=(cleanFinal.length?cleanFinal:[fallbackName].filter(Boolean)).map(escapeHtml).join('<br>');
+    $('celebrateText').textContent=(cleanFinal.length>1?'¡TENEMOS VARIOS GANADORES!':'¡FELICITACIONES, GANADOR!');
+    $('celebration').classList.add('show');
+  }
+}
 async function checkPrizes(){
   if(!roomData)return;
-  const bingoWinner=findGrandWinner();
-  if(bingoWinner){
-    if(!bingoWon){bingoWon=true;const count=(bingoWinner.cards||[]).length;showPrize(count===3?'triple':'full',count===3?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡BINGO COMPLETO!',bingoWinner.name,true,count)}
-    if(uid===roomData.callerUid&&roomData.status==='active'&&!finishing){finishing=true;try{await updateDoc(roomRef(),{status:'finished',winnerUid:bingoWinner.uid,winnerName:bingoWinner.name,finishedAt:serverTimestamp()})}catch(e){console.error(e)}finally{finishing=false}}
-    return;
-  }
+  const tripleMode=players.filter(p=>(p.cards||[]).length===3).length>=2;
   if(roomData.status==='finished'){
-    if(!bingoWon&&roomData.winnerName){bingoWon=true;showPrize('full','🏆 ¡BINGO!',roomData.winnerName,true,0)}
+    if(!players.length||bingoWon)return;
+    bingoWon=true;
+    // El documento de Firestore conserva un ganador principal por las reglas actuales.
+    // Todos los ganadores simultáneos se reconstruyen desde los cartones y las bolillas finales.
+    const finalWinners=findGrandWinners();
+    const fallback=roomData.winnerName||'';
+    showAwards({finalWinners,lineWinners:[],fullWinners:[],isTriple:tripleMode,final:true,fallbackName:fallback});
     return;
   }
-  const fullPlayer=findFullCardWinner();
-  if(fullPlayer&&!fullWon){fullWon=true;showPrize('full','🎉 ¡CARTÓN LLENO!',fullPlayer.name,false,(fullPlayer.cards||[]).length);return}
-  const linePlayer=findLineWinner();
-  if(linePlayer&&!lineWon){lineWon=true;showPrize('line','🥳 ¡LÍNEA COMPLETA!',linePlayer.name,false,(linePlayer.cards||[]).length);return}
+  if(roomData.status!=='active')return;
+  const fullWinners=findFullCardWinners();
+  const lineWinners=findLineWinners();
+  const finalWinners=findGrandWinners();
+  const newLines=lineWinners.filter(p=>p.uid&&!announcedLineWinners.has(p.uid));
+  const newFulls=fullWinners.filter(p=>p.uid&&!announcedFullWinners.has(p.uid));
+  newLines.forEach(p=>announcedLineWinners.add(p.uid));
+  newFulls.forEach(p=>announcedFullWinners.add(p.uid));
+  if(announcedLineWinners.size)lineWon=true;
+  if(announcedFullWinners.size)fullWon=true;
+  if(finalWinners.length){
+    if(!bingoWon){
+      bingoWon=true;
+      // Si la misma bolilla completa línea, cartón y bingo, se muestran juntos.
+      showAwards({lineWinners:newLines,fullWinners:newFulls,finalWinners,isTriple:tripleMode,final:true});
+    }
+    // Las reglas actuales validan un único winnerUid y exigen que winnerName
+    // coincida exactamente con ese participante. Los demás ganadores se
+    // muestran en todos los dispositivos calculándolos con las bolillas finales.
+    if(uid===roomData.callerUid&&roomData.status==='active'&&!finishing){
+      finishing=true;
+      try{
+        await updateDoc(roomRef(),{
+          status:'finished',
+          winnerUid:finalWinners[0].uid,
+          winnerName:finalWinners[0].name,
+          finishedAt:serverTimestamp()
+        });
+      }catch(e){console.error('No se pudo cerrar la partida:',e)}
+      finally{finishing=false}
+    }
+    return;
+  }
+  if(newLines.length||newFulls.length)showAwards({lineWinners:newLines,fullWinners:newFulls});
   if(!lineWon&&!fullWon)$('prizebox').classList.add('hidden');
+  if(drawn.length>=90){
+    $('draw').disabled=true;
+    $('msg').textContent='Salieron las 90 bolillas y no hubo bingo. La partida necesita finalizarse desde las reglas de Firebase.';
+  }
 }
 function leaveRoom(){if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();unsubRoom=unsubPlayers=null;roomCode=null;roomData=null;players=[];myCards=[];drawn=[];const url=new URL(location.href);url.searchParams.delete('room');history.replaceState({},'',url);$('game').classList.add('hidden');$('setup').classList.remove('hidden')}
-$('start').addEventListener('click',createRoom);$('join').addEventListener('click',joinRoom);$('begin').addEventListener('click',beginGame);$('draw').addEventListener('click',draw);$('back').addEventListener('click',leaveRoom);
+$('start').addEventListener('click',createRoom);$('join').addEventListener('click',joinRoom);$('begin').addEventListener('click',beginGame);$('recoverCaller').addEventListener('click',recoverCaller);$('draw').addEventListener('click',draw);$('back').addEventListener('click',leaveRoom);
 document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>{qty=+b.dataset.q;document.querySelectorAll('[data-q]').forEach(x=>x.classList.toggle('active',x===b))}));
 
 // Sonidos y celebración conservados del juego original.
