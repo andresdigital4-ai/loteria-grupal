@@ -1,0 +1,23 @@
+LOTERÍA GRUPAL 1–90 — paquete actualizado
+
+FUNCIONES
+- Cualquier persona puede crear una partida.
+- Para crear o entrar, cada participante solo escribe su nombre; no necesita registrarse ni elegir permisos. La aplicación usa acceso anónimo de Firebase en segundo plano.
+- El creador comparte el enlace antes de iniciar la partida.
+- Al iniciar, se elige un tirador al azar. Puede repetirse en partidas futuras.
+- El tirador conserva el turno durante toda esa partida. Solo su teléfono puede extraer bolillas; en los demás el botón queda bloqueado.
+- Las bolillas, el tablero y el estado se sincronizan en tiempo real.
+- El sistema detecta líneas y cartones llenos, y termina la partida cuando una persona completa todos sus cartones.
+- Botón de instalación: Android puede ofrecer instalación directa; en iPhone se usa Compartir > Agregar a pantalla de inicio. El icono incluido es provisional y se puede reemplazar más adelante.
+
+CONFIGURACIÓN ÚNICA EN FIREBASE
+1) En Authentication > Sign-in method, habilitar Anonymous (Anónimo).
+2) Crear/usar Firestore Database.
+3) En Firestore Database > Rules, pegar firestore.rules y publicar.
+4) Subir todos los archivos del ZIP a la raíz del repositorio publicado con GitHub Pages.
+
+IMPORTANTE
+- El HTML utiliza la configuración web del proyecto Firebase loteria-grupal que estaba configurada en el paquete previo. Si ese proyecto no es el correcto o no tenés acceso, habrá que sustituir firebaseConfig por el de tu proyecto.
+- Publicar siempre por HTTPS. No compartas claves privadas ni archivos de cuenta de servicio.
+- Probá primero con 2 o 3 teléfonos antes de usarlo en una partida grande. Estas reglas son una base funcional para este flujo, no una auditoría de seguridad.
+- No se permite que nuevos jugadores se sumen después de iniciar la partida, para que todos tengan sus cartones desde el comienzo. Quienes ya estaban anotados pueden volver a entrar desde el mismo navegador/dispositivo y recuperar sus cartones.
