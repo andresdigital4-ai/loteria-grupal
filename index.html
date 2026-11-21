@@ -48,17 +48,14 @@ footer{text-align:center;color:#bdb9ef;font-size:12px;padding:18px}
 <h2>🎉 ¡PREPARÁ TU PARTIDA!</h2>
 <label for="player">Tu nombre y apellido</label><input id="player" placeholder="Ej.: María González" autocomplete="name" maxlength="50">
 <label>¿Cuántos cartones querés?</label><div class="qty"><button type="button" data-q="1" class="active">1 cartón</button><button type="button" data-q="2">2 cartones</button><button type="button" data-q="3">3 cartones</button></div>
-<p><button id="start" class="green" style="width:100%;margin-top:16px">🎉 CREAR UNA PARTIDA NUEVA</button></p>
-<input id="roomCode" type="hidden" value="">
-<div id="invitePanel" class="status hidden">
-  🎉 ¡Recibiste una invitación! Escribí tu nombre, elegí tus cartones y entrá directamente.
-  <p><button id="join" class="purple" style="width:100%">UNIRME A LA PARTIDA</button></p>
-</div>
+<p><button id="join" class="green" style="width:100%;margin-top:16px" disabled>⏳ BUSCANDO PARTIDA…</button></p>
+<p><button id="start" class="purple hidden" style="width:100%;margin-top:8px">🎉 CREAR UNA PARTIDA NUEVA</button></p>
+<div id="lobbyMessage" class="status">Conectando con la sala general…</div>
 <div id="connection" class="hint">Conectando con el servidor…</div>
 <div class="row" style="margin-top:14px"><button id="install" class="gold" type="button">📲 Instalar aplicación</button><button id="shareApp" class="purple" type="button">🔗 Compartir aplicación</button></div>
 </section>
 <section id="game" class="hidden">
-<div class="panel"><div class="row"><h2>🎯 PARTIDA EN JUEGO</h2><button id="soundToggle" class="gold" type="button">🔊 Sonido activado</button><button id="share" class="gold" type="button">Compartir invitación</button></div><div class="status"><span id="roomLabel" class="hidden"></span><span id="roomState">Esperando jugadores</span></div><div id="playersList" class="status">Cargando participantes…</div><button id="begin" class="green" style="width:100%;margin:8px 0">🎲 ELEGIR TIRADOR Y COMENZAR</button><div class="tirador"><strong>TIRADOR ELEGIDO POR EL SISTEMA</strong><span id="caller">—</span></div><div id="msg" class="status">Preparados… ¡mucha suerte!</div></div>
+<div class="panel"><div class="row"><h2>🎯 PARTIDA EN JUEGO</h2><button id="soundToggle" class="gold" type="button">🔊 Sonido activado</button></div><div class="status"><span id="roomLabel" class="hidden"></span><span id="roomState">Esperando jugadores</span></div><div id="playersList" class="status">Cargando participantes…</div><button id="begin" class="green" style="width:100%;margin:8px 0">🎲 ELEGIR TIRADOR Y COMENZAR</button><div class="tirador"><strong>TIRADOR ELEGIDO POR EL SISTEMA</strong><span id="caller">—</span></div><div id="msg" class="status">Preparados… ¡mucha suerte!</div></div>
 <div class="panel"><h2>🎱 Bolillas extraídas</h2><div id="lastballs" class="drawnballs"><span class="hint">Todavía no salió ninguna bolilla</span></div><div class="row" style="margin-top:14px"><button id="draw" class="green" disabled>EXTRAER 1 BOLILLA</button><button id="back" class="purple">SALIR DE LA PARTIDA</button></div><div class="hint">Solo el tirador elegido puede extraer bolillas. No se repiten números.</div></div>
 <div class="panel"><h2>🔢 Tablero del 1 al 90</h2><div id="board" class="board"></div></div>
 <div class="panel"><h2>🏆 Mis cartones</h2><div id="tickets" class="cards"></div></div>
@@ -69,7 +66,7 @@ footer{text-align:center;color:#bdb9ef;font-size:12px;padding:18px}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getFirestore, doc, collection, onSnapshot, runTransaction, serverTimestamp, setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { getFirestore, doc, collection, onSnapshot, runTransaction, serverTimestamp, updateDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBNPwKtHj6aodrTxZ5NBDECI5UDt6MM4os",
@@ -81,8 +78,9 @@ const firebaseConfig = {
 };
 const app=initializeApp(firebaseConfig), auth=getAuth(app), db=getFirestore(app);
 const $=id=>document.getElementById(id);
-let uid=null, qty=1, roomCode=null, roomData=null, players=[], myCards=[], drawn=[], caller='', isHost=false, unsubRoom=null, unsubPlayers=null, soundEnabled=true, audioCtx=null, finishing=false, lineWon=false, fullWon=false, bingoWon=false, lastSpokenNumber=null, hasInitialRoomSnapshot=false;
+let uid=null, qty=1, roomCode=null, roomData=null, players=[], myCards=[], drawn=[], caller='', isHost=false, unsubRoom=null, unsubPlayers=null, unsubLobby=null, unsubActiveRoom=null, activeRoomCode=null, activeRoomStatus=null, canRejoinActive=false, soundEnabled=true, audioCtx=null, finishing=false, lineWon=false, fullWon=false, bingoWon=false, lastSpokenNumber=null, hasInitialRoomSnapshot=false;
 const roomRef=()=>doc(db,'rooms',roomCode);
+const lobbyRef=()=>doc(db,'system','activeGame');
 const playerRef=(code,id)=>doc(db,'rooms',code,'players',id);
 const reserveRef=(code,key)=>doc(db,'rooms',code,'cardReservations',key);
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -103,7 +101,7 @@ function decodeCard(value){if(Array.isArray(value))return value;return String(va
 function decodeCards(cards){return (cards||[]).map(decodeCard)}
 function makeCandidates(count){return Array.from({length:Math.max(24,count*12)},()=>makeCard())}
 async function allocateCards(code, name, count, creating=false){
-  const pRef=playerRef(code,uid), rRef=roomRef();
+  const pRef=playerRef(code,uid), rRef=doc(db,'rooms',code);
   const candidates=makeCandidates(count), reservationRefs=[...new Map(candidates.map(c=>[cardKey(c),reserveRef(code,cardKey(c))])).values()];
   return await runTransaction(db,async tx=>{
     const roomSnap=await tx.get(rRef); if(!roomSnap.exists()) throw new Error('La partida no existe. Revisá el código.');
@@ -122,8 +120,43 @@ async function allocateCards(code, name, count, creating=false){
     return selected.map(x=>x.card);
   });
 }
+function renderLobby(){
+  const join=$('join'), start=$('start');
+  if(!uid){join.disabled=true;join.textContent='⏳ CONECTANDO…';start.classList.add('hidden');return}
+  if(!activeRoomCode || activeRoomStatus==='finished' || activeRoomStatus==='missing'){
+    join.classList.add('hidden');join.disabled=true;start.classList.remove('hidden');
+    $('lobbyMessage').textContent=activeRoomStatus==='finished'?'La partida anterior terminó. ¡Ya se puede crear una nueva!':'No hay ninguna partida activa. Cualquier persona puede crear la primera partida.';
+  }else if(activeRoomStatus==='waiting'){
+    join.classList.remove('hidden');join.disabled=false;join.textContent='🎮 UNIRME AL JUEGO';start.classList.add('hidden');
+    $('lobbyMessage').textContent='¡Hay una partida esperando jugadores! Escribí tu nombre y unite. No necesitás invitación ni código.';
+  }else{
+    join.classList.remove('hidden');join.disabled=!canRejoinActive;join.textContent=canRejoinActive?'↩️ VOLVER A MI PARTIDA':'🎱 PARTIDA EN CURSO';start.classList.add('hidden');
+    $('lobbyMessage').textContent=canRejoinActive?'Ya estás anotado en esta partida. Podés volver a entrar con tus mismos cartones.':'La partida ya comenzó y no admite nuevos participantes. La próxima partida se habilitará al finalizar esta.';
+  }
+}
+function watchLobby(){
+  if(unsubLobby)unsubLobby();
+  unsubLobby=onSnapshot(lobbyRef(),snap=>{
+    const nextCode=snap.exists()?snap.data().roomCode:null;
+    if(nextCode!==activeRoomCode){
+      activeRoomCode=nextCode;
+      if(unsubActiveRoom)unsubActiveRoom();unsubActiveRoom=null;
+      activeRoomStatus=nextCode?null:'missing';
+      if(nextCode){
+        unsubActiveRoom=onSnapshot(doc(db,'rooms',nextCode),async roomSnap=>{
+          activeRoomStatus=roomSnap.exists()?roomSnap.data().status:'missing';
+          canRejoinActive=false;
+          if(roomSnap.exists()&&uid&&activeRoomStatus!=='finished'){try{const mine=await getDoc(playerRef(nextCode,uid));canRejoinActive=mine.exists();}catch(e){console.warn('No se pudo comprobar la participación anterior',e)}}
+          renderLobby();
+        },err=>{console.error(err);$('lobbyMessage').textContent='No se pudo consultar la partida activa.'});
+      }
+    }
+    if(!nextCode){activeRoomStatus='missing';renderLobby();}
+  },err=>{console.error(err);$('lobbyMessage').textContent='No se pudo conectar con la sala general. Revisá las reglas de Firestore.'});
+}
 async function createRoom(){
   const name=$('player').value.trim(); if(!name){alert('Escribí tu nombre.');return}
+  if(activeRoomCode&&activeRoomStatus!=='finished'&&activeRoomStatus!=='missing'){alert('Ya existe una partida activa. Tocá “Unirme al juego”.');return}
   $('start').disabled=true;
   try{
     let created=false, code='';
@@ -133,6 +166,11 @@ async function createRoom(){
       try{
         await runTransaction(db,async tx=>{
           const rs=await tx.get(r);if(rs.exists())throw new Error('Código ocupado');
+          const lobbySnap=await tx.get(lobbyRef());
+          if(lobbySnap.exists()){
+            const previousCode=lobbySnap.data().roomCode;
+            if(previousCode){const previousSnap=await tx.get(doc(db,'rooms',previousCode));if(previousSnap.exists()&&previousSnap.data().status!=='finished')throw new Error('Ya hay una partida activa. Volvé al inicio y tocá “Unirme al juego”.');}
+          }
           const p=await tx.get(playerRef(code,uid));if(p.exists())throw new Error('Jugador existente');
           const snaps=[];for(const ref of refs)snaps.push(await tx.get(ref));
           const occupied=new Set();snaps.forEach((x,i)=>{if(x.exists())occupied.add(refs[i].id)});
@@ -141,18 +179,21 @@ async function createRoom(){
           tx.set(r,{hostUid:uid,callerUid:null,callerName:'',status:'waiting',drawn:[],lastNumber:null,createdAt:serverTimestamp()});
           tx.set(playerRef(code,uid),{uid,name,cards:chosen.map(x=>encodeCard(x.card)),cardCount:qty,joinedAt:serverTimestamp()});
           chosen.forEach(({card,key})=>tx.set(reserveRef(code,key),{uid,card:encodeCard(card),createdAt:serverTimestamp()}));
+          tx.set(lobbyRef(),{roomCode:code,hostUid:uid,updatedAt:serverTimestamp()});
           myCards=chosen.map(x=>x.card);
         });created=true;
       }catch(e){if(e.message!=='Código ocupado')throw e;}
     }
-    if(!created)throw new Error('No se pudo crear un código. Probá nuevamente.');
+    if(!created)throw new Error('No se pudo crear una partida. Probá nuevamente.');
     isHost=true; await enterRoom(code);
-  }catch(e){console.error(e);alert('No se pudo crear la partida: '+e.message)}finally{$('start').disabled=false}
+  }catch(e){console.error(e);alert('No se pudo crear la partida: '+e.message)}finally{$('start').disabled=false;renderLobby()}
 }
 async function joinRoom(){
-  const name=$('player').value.trim(),code=new URL(location.href).searchParams.get('room')||'';if(!name){alert('Escribí tu nombre.');return}if(!/^\d{6}$/.test(code)){alert('Abrí el enlace de invitación que te compartieron.');return}
+  const name=$('player').value.trim(),code=activeRoomCode;
+  if(!name){alert('Escribí tu nombre.');return}
+  if(!code){alert('Todavía no hay una partida. Podés crearla.');return}
   $('join').disabled=true;
-  try{myCards=await allocateCards(code,name,qty);isHost=false;await enterRoom(code)}catch(e){console.error(e);alert(e.message)}finally{$('join').disabled=false}
+  try{roomCode=code;myCards=await allocateCards(code,name,qty);isHost=false;await enterRoom(code)}catch(e){console.error(e);alert(e.message)}finally{$('join').disabled=false;renderLobby()}
 }
 async function enterRoom(code){
   lineWon=false;fullWon=false;bingoWon=false;lastSpokenNumber=null;hasInitialRoomSnapshot=false;roomCode=code;$('roomLabel').textContent=code;$('setup').classList.add('hidden');$('game').classList.remove('hidden');
@@ -211,7 +252,7 @@ async function checkPrizes(){
 function leaveRoom(){if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();unsubRoom=unsubPlayers=null;roomCode=null;roomData=null;players=[];myCards=[];drawn=[];const url=new URL(location.href);url.searchParams.delete('room');history.replaceState({},'',url);$('game').classList.add('hidden');$('setup').classList.remove('hidden')}
 $('start').addEventListener('click',createRoom);$('join').addEventListener('click',joinRoom);$('begin').addEventListener('click',beginGame);$('draw').addEventListener('click',draw);$('back').addEventListener('click',leaveRoom);
 document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>{qty=+b.dataset.q;document.querySelectorAll('[data-q]').forEach(x=>x.classList.toggle('active',x===b))}));
-$('share').addEventListener('click',async()=>{if(!roomCode)return;const url=new URL(location.href);url.searchParams.set('room',roomCode);const text='¡Te invito a jugar a la Lotería Grupal! Entrá desde este enlace: '+url.toString();try{if(navigator.share)await navigator.share({title:'Lotería Grupal 1–90',text,url:url.toString()});else{await navigator.clipboard.writeText(text);alert('¡Enlace copiado! Pegalo en WhatsApp.')}}catch(e){if(e.name!=='AbortError')prompt('Copiá este enlace:',url.toString())}});
+
 // Sonidos y celebración conservados del juego original.
 function getAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;if(!audioCtx)audioCtx=new AC();if(audioCtx.state==='suspended')audioCtx.resume();return audioCtx}catch(e){return null}}
 function tone(freq,start,duration,type='sine',volume=.12){const ctx=getAudio();if(!ctx||!soundEnabled)return;const o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(freq,ctx.currentTime+start);g.gain.setValueAtTime(.001,ctx.currentTime+start);g.gain.exponentialRampToValueAtTime(volume,ctx.currentTime+start+.025);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+start+duration);o.connect(g);g.connect(ctx.destination);o.start(ctx.currentTime+start);o.stop(ctx.currentTime+start+duration+.04)}
@@ -231,7 +272,5 @@ $('shareApp').addEventListener('click',async()=>{
   try{if(navigator.share){await navigator.share({title:'Lotería Grupal 1–90',text:'Instalá la Lotería Grupal 1–90 y jugá con tus amigos.',url});}else if(navigator.clipboard){await navigator.clipboard.writeText(url);alert('Enlace copiado. Ahora podés compartirlo por WhatsApp.');}else{prompt('Copiá el enlace de la aplicación:',url);}}catch(e){if(e.name!=='AbortError')prompt('Copiá el enlace de la aplicación:',url);}
 });
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('No se pudo registrar el service worker',e)));}
-const invitationCode=new URL(location.href).searchParams.get('room');
-if(invitationCode&&/^\d{6}$/.test(invitationCode)){$('roomCode').value=invitationCode;$('invitePanel').classList.remove('hidden');}
-onAuthStateChanged(auth,async user=>{if(user){uid=user.uid;$('connection').textContent='Conectado a Firebase. ¡Ya podés crear una partida o entrar desde un enlace de invitación!';}else{try{await signInAnonymously(auth)}catch(e){console.error(e);$('connection').textContent='No se pudo conectar. Revisá Authentication y las reglas de Firebase.'}}});
+onAuthStateChanged(auth,async user=>{if(user){uid=user.uid;$('connection').textContent='Conectado a Firebase. Sala general disponible.';watchLobby();renderLobby();}else{try{await signInAnonymously(auth)}catch(e){console.error(e);$('connection').textContent='No se pudo conectar. Revisá Authentication y las reglas de Firebase.'}}});
 </script></body></html>
