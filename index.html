@@ -97,6 +97,10 @@ function makeCard(){
   return grid;
 }
 function cardKey(card){return card.flat().filter(Boolean).sort((a,b)=>a-b).join('-')}
+// Firestore no admite arreglos dentro de arreglos: guardamos cada cartón como texto.
+function encodeCard(card){return card.flat().map(n=>n===null?'':String(n)).join(',')}
+function decodeCard(value){if(Array.isArray(value))return value;return String(value||'').split(',').map(v=>v===''?null:Number(v)).reduce((rows,n,i)=>{if(i%9===0)rows.push([]);rows[rows.length-1].push(n);return rows},[])}
+function decodeCards(cards){return (cards||[]).map(decodeCard)}
 function makeCandidates(count){return Array.from({length:Math.max(24,count*12)},()=>makeCard())}
 async function allocateCards(code, name, count, creating=false){
   const pRef=playerRef(code,uid), rRef=roomRef();
@@ -104,7 +108,7 @@ async function allocateCards(code, name, count, creating=false){
   return await runTransaction(db,async tx=>{
     const roomSnap=await tx.get(rRef); if(!roomSnap.exists()) throw new Error('La partida no existe. Revisá el código.');
     const existing=await tx.get(pRef);
-    if(existing.exists()) return existing.data().cards;
+    if(existing.exists()) return decodeCards(existing.data().cards);
     const room=roomSnap.data();
     if(room.status!=='waiting') throw new Error('Esta partida ya comenzó y no admite nuevos participantes.');
     const reservationSnaps=[];
@@ -113,8 +117,8 @@ async function allocateCards(code, name, count, creating=false){
     const selected=[], selectedKeys=new Set();
     for(const card of candidates){const key=cardKey(card);if(!occupied.has(key)&&!selectedKeys.has(key)){selected.push({card,key});selectedKeys.add(key);if(selected.length===count)break}}
     if(selected.length!==count) throw new Error('No se pudieron reservar cartones. Volvé a intentarlo.');
-    selected.forEach(({card,key})=>tx.set(reserveRef(code,key),{uid,card,createdAt:serverTimestamp()}));
-    tx.set(pRef,{uid,name,cards:selected.map(x=>x.card),cardCount:count,joinedAt:serverTimestamp()});
+    selected.forEach(({card,key})=>tx.set(reserveRef(code,key),{uid,card:encodeCard(card),createdAt:serverTimestamp()}));
+    tx.set(pRef,{uid,name,cards:selected.map(x=>encodeCard(x.card)),cardCount:count,joinedAt:serverTimestamp()});
     return selected.map(x=>x.card);
   });
 }
@@ -135,8 +139,8 @@ async function createRoom(){
           const chosen=[],keys=new Set();for(const card of candidates){const key=cardKey(card);if(!occupied.has(key)&&!keys.has(key)){chosen.push({card,key});keys.add(key);if(chosen.length===qty)break}}
           if(chosen.length!==qty)throw new Error('No se pudieron generar cartones');
           tx.set(r,{hostUid:uid,callerUid:null,callerName:'',status:'waiting',drawn:[],lastNumber:null,createdAt:serverTimestamp()});
-          tx.set(playerRef(code,uid),{uid,name,cards:chosen.map(x=>x.card),cardCount:qty,joinedAt:serverTimestamp()});
-          chosen.forEach(({card,key})=>tx.set(reserveRef(code,key),{uid,card,createdAt:serverTimestamp()}));
+          tx.set(playerRef(code,uid),{uid,name,cards:chosen.map(x=>encodeCard(x.card)),cardCount:qty,joinedAt:serverTimestamp()});
+          chosen.forEach(({card,key})=>tx.set(reserveRef(code,key),{uid,card:encodeCard(card),createdAt:serverTimestamp()}));
           myCards=chosen.map(x=>x.card);
         });created=true;
       }catch(e){if(e.message!=='Código ocupado')throw e;}
@@ -155,7 +159,7 @@ async function enterRoom(code){
   const url=new URL(location.href);url.searchParams.set('room',code);history.replaceState({},'',url);
   if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();
   unsubRoom=onSnapshot(roomRef(),snap=>{if(!snap.exists()){alert('La partida ya no existe.');leaveRoom();return}roomData=snap.data();drawn=roomData.drawn||[];caller=roomData.callerName||'';renderRoom();},err=>{console.error(err);$('msg').textContent='Error de conexión con la partida.'});
-  unsubPlayers=onSnapshot(collection(db,'rooms',code,'players'),snap=>{players=snap.docs.map(d=>d.data()).sort((a,b)=>(a.name||'').localeCompare(b.name||''));const mine=players.find(p=>p.uid===uid);if(mine)myCards=mine.cards;renderPlayers();renderTickets();renderRoom();},err=>console.error(err));
+  unsubPlayers=onSnapshot(collection(db,'rooms',code,'players'),snap=>{players=snap.docs.map(d=>({...d.data(),cards:decodeCards(d.data().cards)})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));const mine=players.find(p=>p.uid===uid);if(mine)myCards=mine.cards;renderPlayers();renderTickets();renderRoom();},err=>console.error(err));
 }
 function renderPlayers(){ $('playersList').innerHTML='<strong>Participantes ('+players.length+')</strong><br>'+players.map(p=>'👤 '+escapeHtml(p.name)+(p.uid===roomData?.hostUid?' ⭐ Anfitrión':'')).join('<br>'); }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}

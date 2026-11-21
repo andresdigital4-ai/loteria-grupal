@@ -29,8 +29,6 @@ service cloud.firestore {
 
       allow read: if signedIn();
 
-      // El anfitrión solamente puede iniciar una partida una vez y elegir
-      // como tirador a una persona que realmente esté en la sala.
       allow update: if signedIn() && (
         (isHost(code)
           && resource.data.status == 'waiting'
@@ -87,7 +85,6 @@ service cloud.firestore {
           && request.resource.data.cardCount <= 3
           && request.resource.data.cards.size() == request.resource.data.cardCount
           && request.resource.data.joinedAt is timestamp;
-        // No se permite cambiar nombre ni cartones después de entrar.
         allow update: if false;
         allow delete: if isHost(code) && get(roomPath(code)).data.status == 'waiting';
       }
@@ -97,10 +94,9 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.resource.data.keys().hasOnly(['uid','card','createdAt'])
           && request.resource.data.uid == request.auth.uid
+          && request.resource.data.card is string
           && roomExistsAfter(code)
           && getAfter(roomPath(code)).data.status == 'waiting'
-          && request.resource.data.card is list
-          && request.resource.data.card.size() == 3
           && request.resource.data.createdAt is timestamp
           && existsAfter(playerPath(code, request.auth.uid))
           && getAfter(playerPath(code, request.auth.uid)).data.cards.hasAny([request.resource.data.card]);
