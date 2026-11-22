@@ -78,7 +78,7 @@ const firebaseConfig = {
 };
 const app=initializeApp(firebaseConfig), auth=getAuth(app), db=getFirestore(app);
 const $=id=>document.getElementById(id);
-let uid=null, qty=1, roomCode=null, roomData=null, players=[], myCards=[], drawn=[], caller='', isHost=false, unsubRoom=null, unsubPlayers=null, unsubLobby=null, unsubActiveRoom=null, activeRoomCode=null, activeRoomStatus=null, canRejoinActive=false, soundEnabled=true, audioCtx=null, finishing=false, lineWon=false, fullWon=false, bingoWon=false, announcedLineWinners=new Set(), announcedFullWinners=new Set(), lastSpokenNumber=null, hasInitialRoomSnapshot=false;
+let uid=null, qty=1, roomCode=null, roomData=null, players=[], myCards=[], drawn=[], caller='', isHost=false, unsubRoom=null, unsubPlayers=null, unsubLobby=null, unsubActiveRoom=null, activeRoomCode=null, activeRoomStatus=null, canRejoinActive=false, soundEnabled=true, audioUnlocked=false, speechQueue=[], speechBusy=false, audioCtx=null, finishing=false, lineWon=false, fullWon=false, bingoWon=false, announcedLineWinners=new Set(), announcedFullWinners=new Set(), lastSpokenNumber=null, hasInitialRoomSnapshot=false;
 const roomRef=()=>doc(db,'rooms',roomCode);
 const lobbyRef=()=>doc(db,'system','activeGame');
 const playerRef=(code,id)=>doc(db,'rooms',code,'players',id);
@@ -244,21 +244,33 @@ async function recoverCaller(){
 }
 async function draw(){if(!roomData||roomData.status!=='active'||roomData.callerUid!==uid)return;const available=Array.from({length:90},(_,i)=>i+1).filter(n=>!drawn.includes(n));if(!available.length)return;const number=available[Math.floor(Math.random()*available.length)];try{await runTransaction(db,async tx=>{const snap=await tx.get(roomRef());if(!snap.exists())throw new Error('La partida no existe');const data=snap.data();if(data.status!=='active'||data.callerUid!==uid)throw new Error('Ya no es tu turno');const current=data.drawn||[];if(current.includes(number))throw new Error('Ese número ya salió');tx.update(roomRef(),{drawn:[...current,number],lastNumber:number});});}catch(e){console.error(e);$('msg').textContent=e.message}}
 function cardNumbers(card){return (card||[]).flat().filter(n=>Number.isInteger(n)&&n>=1&&n<=90)}
-function isFullCard(card){const nums=cardNumbers(card);return nums.length===15&&nums.every(n=>drawn.includes(n))}
+function isFullCard(card,numbers=drawn){const nums=cardNumbers(card);return nums.length===15&&nums.every(n=>numbers.includes(n))}
 // Regla final: con dos o más participantes de 3 cartones, el bingo exige
 // que uno complete los tres. Si hay menos de dos, alcanza con llenar un cartón.
-function findFullCardWinners(){return players.filter(p=>(p.cards||[]).some(isFullCard))}
-function findGrandWinners(){
+function findFullCardWinners(numbers=drawn){return players.filter(p=>(p.cards||[]).some(card=>isFullCard(card,numbers)))}
+function findGrandWinners(numbers=drawn){
   const threeCardPlayers=players.filter(p=>(p.cards||[]).length===3);
-  if(threeCardPlayers.length>=2)return threeCardPlayers.filter(p=>p.cards.every(isFullCard));
-  return findFullCardWinners();
+  if(threeCardPlayers.length>=2)return threeCardPlayers.filter(p=>p.cards.every(card=>isFullCard(card,numbers)));
+  return findFullCardWinners(numbers);
 }
-function findLineWinners(){
+function findLineWinners(numbers=drawn){
   return players.filter(p=>(p.cards||[]).some(card=>{
     const rows=(card||[]).filter(row=>row.filter(n=>Number.isInteger(n)&&n>=1&&n<=90).length===5);
-    return rows.some(row=>row.filter(n=>Number.isInteger(n)&&n>=1&&n<=90).every(n=>drawn.includes(n)));
+    return rows.some(row=>row.filter(n=>Number.isInteger(n)&&n>=1&&n<=90).every(n=>numbers.includes(n)));
   }));
 }
+// Devuelve únicamente a quienes ganaron en la primera bolilla que habilitó el premio.
+// Así se reconocen todos los empates del mismo número, pero no ganadores posteriores.
+function firstWinnersAtSameDraw(findWinners){
+  for(let i=0;i<drawn.length;i++){
+    const winners=findWinners(drawn.slice(0,i+1));
+    if(winners.length)return winners;
+  }
+  return [];
+}
+function findFirstLineWinners(){return firstWinnersAtSameDraw(findLineWinners)}
+function findFirstFullCardWinners(){return firstWinnersAtSameDraw(findFullCardWinners)}
+function findFirstGrandWinners(){return firstWinnersAtSameDraw(findGrandWinners)}
 function confetti(big=false){const count=big?115:42;const colors=['#ffe34d','#ff4f78','#43e6a0','#56c9ff','#c77bff','#ffffff'];for(let i=0;i<count;i++){const el=document.createElement('i');el.className='confetti';el.style.left=Math.random()*100+'vw';el.style.background=colors[i%colors.length];el.style.animationDuration=(2.2+Math.random()*2.5)+'s';el.style.animationDelay=(Math.random()*.8)+'s';el.style.transform='rotate('+Math.random()*360+'deg)';document.body.appendChild(el);setTimeout(()=>el.remove(),5500)}}
 function cheer(kind){if(!soundEnabled)return;const notes=kind==='triple'?[523,659,784,1047,784,1047,1319]:kind==='full'?[523,659,784,988]:[587,740,880];notes.forEach((n,i)=>tone(n,i*.14,.22,'triangle',.14));if(kind==='triple'){[0,.22,.44,.66,.88].forEach((t,i)=>tone([784,988,1175,1319,1568][i],t,.38,'sawtooth',.045))}}
 function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=false,final=false,fallbackName=''}){
@@ -271,12 +283,14 @@ function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=fals
   if(!box.innerHTML&&fallbackName)box.innerHTML=section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡CARTÓN LLENO!',[fallbackName]);
   box.classList.remove('hidden');
   confetti(final);cheer(final?(isTriple?'triple':'full'):cleanFull.length?'full':'line');
+  // La locutora dice cada nombre por separado, en orden, sin pisar el mensaje anterior.
   const speech=[];
-  if(cleanLine.length)speech.push('Línea completa: '+cleanLine.join(', '));
-  if(cleanFull.length)speech.push('Cartón lleno: '+cleanFull.join(', '));
-  if(cleanFinal.length)speech.push((isTriple?'Bingo de tres cartones: ':'Bingo: ')+cleanFinal.join(', '));
-  if(!speech.length&&fallbackName)speech.push('Ganador: '+fallbackName);
-  if(speech.length)setTimeout(()=>speak(speech.join('. ')+'. ¡Felicitaciones!'),900);
+  const announceGroup=(title,names)=>{if(names.length){speech.push(title);names.forEach(name=>speech.push(name));}};
+  announceGroup('¡Ganadores de línea!',cleanLine);
+  announceGroup('¡Ganadores de cartón lleno!',cleanFull);
+  announceGroup(isTriple?'¡Ganadores de bingo de tres cartones!':'¡Ganadores de bingo!',cleanFinal);
+  if(!speech.length&&fallbackName){speech.push('¡Tenemos un ganador!',fallbackName);}
+  if(speech.length)setTimeout(()=>{speech.forEach((part,i)=>speak(part));speak('¡Felicitaciones a todos!');},900);
   if(final){
     $('celebrateTitle').textContent=isTriple?'¡BINGO DE TRES CARTONES!':'¡BINGO COMPLETO!';
     $('championName').innerHTML=(cleanFinal.length?cleanFinal:[fallbackName].filter(Boolean)).map(escapeHtml).join('<br>');
@@ -292,15 +306,17 @@ async function checkPrizes(){
     bingoWon=true;
     // El documento de Firestore conserva un ganador principal por las reglas actuales.
     // Todos los ganadores simultáneos se reconstruyen desde los cartones y las bolillas finales.
-    const finalWinners=findGrandWinners();
+    const finalWinners=findFirstGrandWinners();
+    const lineWinners=findFirstLineWinners();
+    const fullWinners=findFirstFullCardWinners();
     const fallback=roomData.winnerName||'';
-    showAwards({finalWinners,lineWinners:[],fullWinners:[],isTriple:tripleMode,final:true,fallbackName:fallback});
+    showAwards({finalWinners,lineWinners,fullWinners,isTriple:tripleMode,final:true,fallbackName:fallback});
     return;
   }
   if(roomData.status!=='active')return;
-  const fullWinners=findFullCardWinners();
-  const lineWinners=findLineWinners();
-  const finalWinners=findGrandWinners();
+  const fullWinners=findFirstFullCardWinners();
+  const lineWinners=findFirstLineWinners();
+  const finalWinners=findFirstGrandWinners();
   const newLines=lineWinners.filter(p=>p.uid&&!announcedLineWinners.has(p.uid));
   const newFulls=fullWinners.filter(p=>p.uid&&!announcedFullWinners.has(p.uid));
   newLines.forEach(p=>announcedLineWinners.add(p.uid));
@@ -338,14 +354,42 @@ async function checkPrizes(){
   }
 }
 function leaveRoom(){if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();unsubRoom=unsubPlayers=null;roomCode=null;roomData=null;players=[];myCards=[];drawn=[];const url=new URL(location.href);url.searchParams.delete('room');history.replaceState({},'',url);$('game').classList.add('hidden');$('setup').classList.remove('hidden')}
-$('start').addEventListener('click',createRoom);$('join').addEventListener('click',joinRoom);$('begin').addEventListener('click',beginGame);$('recoverCaller').addEventListener('click',recoverCaller);$('draw').addEventListener('click',draw);$('back').addEventListener('click',leaveRoom);
+$('start').addEventListener('click',()=>{unlockVoice();createRoom()});$('join').addEventListener('click',()=>{unlockVoice();joinRoom()});$('begin').addEventListener('click',beginGame);$('recoverCaller').addEventListener('click',recoverCaller);$('draw').addEventListener('click',draw);$('back').addEventListener('click',leaveRoom);
 document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>{qty=+b.dataset.q;document.querySelectorAll('[data-q]').forEach(x=>x.classList.toggle('active',x===b))}));
 
 // Sonidos y celebración conservados del juego original.
 function getAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;if(!audioCtx)audioCtx=new AC();if(audioCtx.state==='suspended')audioCtx.resume();return audioCtx}catch(e){return null}}
 function tone(freq,start,duration,type='sine',volume=.12){const ctx=getAudio();if(!ctx||!soundEnabled)return;const o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(freq,ctx.currentTime+start);g.gain.setValueAtTime(.001,ctx.currentTime+start);g.gain.exponentialRampToValueAtTime(volume,ctx.currentTime+start+.025);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+start+duration);o.connect(g);g.connect(ctx.destination);o.start(ctx.currentTime+start);o.stop(ctx.currentTime+start+duration+.04)}
-function speak(t){if(!soundEnabled||!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='es-AR';u.rate=.88;u.pitch=1.1;const voices=speechSynthesis.getVoices();u.voice=voices.find(v=>/^es-AR/i.test(v.lang))||voices.find(v=>/^es-(MX|UY|CL)/i.test(v.lang))||voices.find(v=>/^es/i.test(v.lang))||null;speechSynthesis.speak(u)}catch(e){}}
-$('soundToggle').addEventListener('click',()=>{soundEnabled=!soundEnabled;$('soundToggle').textContent=soundEnabled?'🔊 Sonido activado':'🔇 Sonido apagado';if(!soundEnabled&&'speechSynthesis'in window)speechSynthesis.cancel();else{getAudio();speak('Sonido activado')}});
+function unlockVoice(){
+  audioUnlocked=true;soundEnabled=true;getAudio();
+  $('soundToggle').textContent='🔊 Voz activada';
+  speak('Voz activada');
+}
+function speak(t){
+  if(!soundEnabled||!audioUnlocked||!('speechSynthesis'in window))return;
+  speechQueue.push(String(t));
+  playNextSpeech();
+}
+function playNextSpeech(){
+  if(speechBusy||!speechQueue.length||!soundEnabled||!audioUnlocked||!('speechSynthesis'in window))return;
+  speechBusy=true;
+  try{
+    const u=new SpeechSynthesisUtterance(speechQueue.shift());
+    u.lang='es-AR';u.rate=.9;u.pitch=1.18;
+    const voices=speechSynthesis.getVoices();
+    const spanish=voices.filter(v=>/^es/i.test(v.lang));
+    u.voice=spanish.find(v=>/female|mujer|paulina|helena|monica|mónica|lucia|lucía|sofia|sofía|isabella|maria|maría|sabina|laura/i.test(v.name))||spanish.find(v=>/^es-AR/i.test(v.lang))||spanish[0]||null;
+    const finish=()=>{speechBusy=false;playNextSpeech()};
+    u.onend=finish;u.onerror=finish;
+    speechSynthesis.speak(u);
+  }catch(e){speechBusy=false;playNextSpeech();}
+}
+$('soundToggle').addEventListener('click',()=>{
+  if(!audioUnlocked){unlockVoice();return}
+  soundEnabled=!soundEnabled;$('soundToggle').textContent=soundEnabled?'🔊 Voz activada':'🔇 Voz silenciada';
+  if(!soundEnabled){speechQueue=[];speechBusy=false;if('speechSynthesis'in window)speechSynthesis.cancel();}
+  else{getAudio();speak('Voz activada')}
+});
 $('closeCelebration').addEventListener('click',()=>$('celebration').classList.remove('show'));
 // Instalación PWA y compartir el enlace principal de la aplicación.
 let deferredInstallPrompt=null;
