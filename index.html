@@ -61,7 +61,7 @@ footer{text-align:center;color:#bdb9ef;font-size:12px;padding:18px}
 <div class="panel"><h2>🏆 Mis cartones</h2><div id="tickets" class="cards"></div></div>
 <div id="prizebox" class="notice hidden"></div>
 </section>
-<div id="celebration" role="dialog" aria-modal="true" aria-labelledby="celebrateTitle"><div class="celebrate-card"><div class="celebrate-art">🎊 🎉 🏆 🎉 🎊</div><h2 id="celebrateTitle">¡GRAN GANADOR!</h2><div id="championName" class="champion"></div><p id="celebrateText">¡Felicitaciones!</p><button id="closeCelebration" class="gold" type="button">¡SEGUIR!</button></div></div>
+<div id="celebration" role="dialog" aria-modal="true" aria-labelledby="celebrateTitle"><div class="celebrate-card"><div class="celebrate-art">🎊 🎉 🏆 🎉 🎊</div><h2 id="celebrateTitle">¡GRAN GANADOR!</h2><div id="championName" class="champion"></div><p id="celebrateText">¡Felicitaciones!</p><div class="row" style="margin-top:16px"><button id="continueGame" class="green" type="button">▶️ SEGUIR</button><button id="abandonGame" class="red" type="button">🚪 ABANDONAR</button></div></div></div>
 </main><footer>Lotería grupal 1–90 · Partidas sincronizadas en tiempo real</footer>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
@@ -205,7 +205,14 @@ async function enterRoom(code){
   unsubRoom=onSnapshot(roomRef(),snap=>{
     if(!snap.exists()){alert('La partida ya no existe.');cleanupRoom();return}
     const previousCaller=lastObservedCallerUid;
+    const previousStatus=roomData?.status;
     roomData=snap.data();
+    if(previousStatus==='finished'&&roomData.status==='waiting'){
+      lineWon=false;fullWon=false;bingoWon=false;
+      announcedLineWinners=new Set();announcedFullWinners=new Set();
+      lastSpokenNumber=null;hasInitialRoomSnapshot=false;
+      $('celebration').classList.remove('show');$('prizebox').classList.add('hidden');
+    }
     const nextCaller=roomData.callerUid||null;
     if(previousCaller&&nextCaller&&previousCaller!==nextCaller&&roomData.status==='active'){
       const newCallerName=roomData.callerName||players.find(p=>p.uid===nextCaller)?.name||'otro participante';
@@ -271,7 +278,7 @@ async function attemptAutomaticCallerTransfer(){
   }finally{transferInProgress=false;}
 }
 
-function renderPlayers(){ $('playersList').innerHTML='<strong>Participantes ('+players.filter(p=>!p.leftAt).length+' activos)</strong><br>'+players.map(p=>'👤 '+escapeHtml(p.name)+(p.uid===roomData?.hostUid?' ⭐ Anfitrión':'')+(p.leftAt?' — Salió de la partida':'')).join('<br>'); }
+function renderPlayers(){ $('playersList').innerHTML='<strong>Participantes ('+players.filter(p=>!p.leftAt).length+' activos)</strong><br>'+players.map(p=>'👤 '+escapeHtml(p.name)+(p.uid===roomData?.hostUid?' ⭐ Anfitrión':'')+(p.continueNextGame?' — quiere seguir':'')+(p.leftAt?' — Salió de la partida':'')).join('<br>'); }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function renderRoom(){if(!roomData)return;$('caller').textContent=caller||'Se elegirá al comenzar';$('roomState').textContent=roomData.status==='waiting'?'Esperando jugadores':roomData.status==='active'?'Partida en curso':'Partida terminada';$('begin').classList.toggle('hidden',!(uid===roomData.hostUid&&roomData.status==='waiting'));$('recoverCaller').classList.add('hidden');$('draw').disabled=!(roomData.status==='active'&&roomData.callerUid===uid&&drawn.length<90);$('msg').textContent=roomData.status==='waiting'?'Compartí el enlace de invitación para que se unan los participantes.':roomData.status==='finished'?'¡La partida terminó! Ganador(es): '+(roomData.winnerName||''):roomData.callerUid===uid?'¡Es tu turno! Podés extraer una bolilla.':'El tirador está jugando. Si pierde la conexión, el sistema elegirá automáticamente a otro participante.';
   $('board').innerHTML=Array.from({length:90},(_,i)=>`<div class="ball ${drawn.includes(i+1)?'drawn':''}">${i+1}</div>`).join('');
@@ -301,12 +308,16 @@ async function recoverCaller(){
 async function draw(){if(!roomData||roomData.status!=='active'||roomData.callerUid!==uid)return;const available=Array.from({length:90},(_,i)=>i+1).filter(n=>!drawn.includes(n));if(!available.length)return;const number=available[Math.floor(Math.random()*available.length)];try{await runTransaction(db,async tx=>{const snap=await tx.get(roomRef());if(!snap.exists())throw new Error('La partida no existe');const data=snap.data();if(data.status!=='active'||data.callerUid!==uid)throw new Error('Ya no es tu turno');const current=data.drawn||[];if(current.includes(number))throw new Error('Ese número ya salió');tx.update(roomRef(),{drawn:[...current,number],lastNumber:number});});}catch(e){console.error(e);$('msg').textContent=e.message}}
 function cardNumbers(card){return (card||[]).flat().filter(n=>Number.isInteger(n)&&n>=1&&n<=90)}
 function isFullCard(card,numbers=drawn){const nums=cardNumbers(card);return nums.length===15&&nums.every(n=>numbers.includes(n))}
-// Regla final: con dos o más participantes de 3 cartones, el bingo exige
-// que uno complete los tres. Si hay menos de dos, alcanza con llenar un cartón.
+// Reglas de premios:
+// Todos participan por línea y cartón lleno.
+// Quien tiene 3 cartones también puede ganar BINGO al completar sus 3 cartones.
+// Si hay al menos un jugador con 3 cartones, el cartón lleno NO termina la partida:
+// se continúa hasta que un jugador habilitado complete los tres.
+// Si nadie tiene 3 cartones, cartón lleno es el premio final.
 function findFullCardWinners(numbers=drawn){return players.filter(p=>!p.leftAt&&(p.cards||[]).some(card=>isFullCard(card,numbers)))}
 function findGrandWinners(numbers=drawn){
   const threeCardPlayers=players.filter(p=>!p.leftAt&&(p.cards||[]).length===3);
-  if(threeCardPlayers.length>=2)return threeCardPlayers.filter(p=>p.cards.every(card=>isFullCard(card,numbers)));
+  if(threeCardPlayers.length>=1)return threeCardPlayers.filter(p=>(p.cards||[]).length===3&&p.cards.every(card=>isFullCard(card,numbers)));
   return findFullCardWinners(numbers);
 }
 function findLineWinners(numbers=drawn){
@@ -356,7 +367,7 @@ function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=fals
 }
 async function checkPrizes(){
   if(!roomData)return;
-  const tripleMode=players.filter(p=>(p.cards||[]).length===3).length>=2;
+  const tripleMode=players.filter(p=>!p.leftAt&&(p.cards||[]).length===3).length>=1;
   if(roomData.status==='finished'){
     if(!players.length||bingoWon)return;
     bingoWon=true;
@@ -410,6 +421,38 @@ async function checkPrizes(){
   }
 }
 function cleanupRoom(){if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null;}if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();unsubRoom=unsubPlayers=null;roomCode=null;roomData=null;players=[];myCards=[];drawn=[];const url=new URL(location.href);url.searchParams.delete('room');history.replaceState({},'',url);$('game').classList.add('hidden');$('setup').classList.remove('hidden')}
+async function continueGame(){
+  if(!roomCode||!roomData||roomData.status!=='finished')return;
+  // El anfitrión reinicia la misma sala. Los demás pueden indicar que quieren
+  // seguir y esperan a que el anfitrión prepare la ronda siguiente.
+  if(uid!==roomData.hostUid){
+    try{
+      await updateDoc(playerRef(roomCode,uid),{continueNextGame:true});
+      $('celebration').classList.remove('show');
+      $('msg').textContent='Marcaste SEGUIR. Esperá a que el anfitrión inicie la próxima partida.';
+    }catch(e){alert('No se pudo registrar que querés seguir: '+e.message)}
+    return;
+  }
+  if(!confirm('¿Iniciar una nueva partida en esta misma sala? Se reiniciarán las bolillas y los premios. Se conservarán los participantes y sus cartones.'))return;
+  try{
+    await updateDoc(roomRef(),{
+      status:'waiting',callerUid:null,callerName:'',drawn:[],lastNumber:null,
+      winnerUid:null,winnerName:'',finishedAt:null,startedAt:null,
+      roundNumber:(Number(roomData.roundNumber)||1)+1,
+      restartedAt:serverTimestamp()
+    });
+    lineWon=false;fullWon=false;bingoWon=false;
+    announcedLineWinners=new Set();announcedFullWinners=new Set();
+    $('celebration').classList.remove('show');$('prizebox').classList.add('hidden');
+    speak('¡Nueva partida! El anfitrión puede elegir al tirador.');
+  }catch(e){console.error(e);alert('No se pudo reiniciar la partida: '+e.message)}
+}
+async function abandonGame(){
+  const currentRoom=roomCode;
+  $('celebration').classList.remove('show');
+  await exitRoom();
+  if(roomCode===currentRoom)$('celebration').classList.add('show');
+}
 async function exitRoom(){
   if(!roomCode||!uid){cleanupRoom();return;}
   if(!confirm('¿Querés salir definitivamente de esta partida? Si confirmás, no podrás volver a entrar hasta una partida nueva. Si solo cerrás la aplicación o perdés Internet, podrás regresar.'))return;
@@ -452,7 +495,7 @@ $('soundToggle').addEventListener('click',()=>{
   if(!soundEnabled){speechQueue=[];speechBusy=false;if('speechSynthesis'in window)speechSynthesis.cancel();}
   else{getAudio();speak('Voz activada')}
 });
-$('closeCelebration').addEventListener('click',()=>$('celebration').classList.remove('show'));
+$('continueGame').addEventListener('click',continueGame);$('abandonGame').addEventListener('click',abandonGame);
 // Instalación PWA y compartir el enlace principal de la aplicación.
 let deferredInstallPrompt=null;
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstallPrompt=event;});

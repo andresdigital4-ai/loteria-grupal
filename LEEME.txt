@@ -1,21 +1,19 @@
-LOTERÍA GRUPAL - SALA GENERAL
+LOTERÍA GRUPAL — MODIFICACIÓN DE PREMIOS Y FIN DE PARTIDA
 
-Archivos incluidos:
-- index.html: aplicación actualizada con una única partida general.
-- firestore.rules: reglas que permiten leer la sala general y publicar el puntero de la partida activa.
+Contenido:
+- index.html: versión modificada del archivo que enviaste.
 
-INSTALACIÓN EN GITHUB PAGES
-1. En el repositorio andresdigital4-ai/loteria-grupal, reemplazar el archivo index.html de la raíz por el incluido aquí.
-2. En Firebase Console > Firestore Database > Rules, reemplazar las reglas actuales por el archivo firestore.rules y publicar.
-3. No cambiar la configuración de Firebase ni borrar los datos existentes.
-4. Abrir https://andresdigital4-ai.github.io/loteria-grupal/ y probar en dos celulares.
+Cambios incluidos:
+1. Con al menos un participante con 3 cartones, el juego no finaliza al completarse un cartón.
+2. Los participantes con 3 cartones pueden ganar el BINGO al completar los tres cartones.
+3. Los participantes con 1 o 2 cartones siguen participando por línea y cartón lleno, pero no son elegibles para bingo de tres cartones.
+4. Al terminar aparece una ventana con SEGUIR y ABANDONAR.
+5. SEGUIR (anfitrión): reinicia la ronda en la misma sala, limpia bolillas y premios y conserva participantes/cartones.
+6. SEGUIR (otros jugadores): registra que desean continuar y esperan que el anfitrión reinicie.
+7. ABANDONAR registra la salida voluntaria del jugador.
 
-FUNCIONAMIENTO
-- Si no hay una partida activa, aparece CREAR UNA PARTIDA NUEVA.
-- Cuando alguien la crea, los demás ven UNIRME AL JUEGO automáticamente.
-- No se usan códigos ni invitaciones para entrar.
-- Cuando la partida termina, vuelve a habilitarse la creación de una nueva.
-- Quien ya estaba anotado puede volver a entrar con el mismo usuario anónimo y conserva sus cartones.
-
-IMPORTANTE
-La sala general usa el documento Firestore system/activeGame. No borrar ese documento mientras haya una partida en curso.
+IMPORTANTE:
+- Esta modificación se preparó sobre el index.html que adjuntaste.
+- El ZIP no incluye manifest.webmanifest, sw.js ni otros archivos que no adjuntaste.
+- Para actualizar el sitio, descomprimí el ZIP y reemplazá el index.html de tu repositorio por este archivo. No subas el ZIP como si fuera el sitio, porque Firebase Hosting necesita los archivos del proyecto descomprimidos.
+- Antes de publicar, probá la versión en una copia o sitio de prueba. No se pudo verificar desde aquí el comportamiento con tus reglas actuales de Firestore en producción.
