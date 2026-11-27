@@ -1,19 +1,29 @@
-LOTERÍA GRUPAL — MODIFICACIÓN DE PREMIOS Y FIN DE PARTIDA
+LOTERÍA GRUPAL 1–90 — PAQUETE ACTUALIZADO
+Versión de archivos: 2026-11-27-3
 
-Contenido:
-- index.html: versión modificada del archivo que enviaste.
+Incluye:
+- index.html: juego, sincronización Firebase, selección automática del tirador y transferencia automática si se desconecta.
+- firestore.rules: reglas para sala, participantes, cartones, finalización y reinicio de ronda.
+- icon-192.png / icon-512.png: nuevo icono de la bola negra coronada.
+- splash.png: recorte exacto de la pantalla del teléfono de la imagen aprobada, sin recrear la ilustración; la barra de carga se anima por código encima de la barra original.
+- manifest.webmanifest: configuración PWA e iconos.
+- sw.js: activación de nuevas versiones y aviso a las pestañas abiertas.
 
-Cambios incluidos:
-1. Con al menos un participante con 3 cartones, el juego no finaliza al completarse un cartón.
-2. Los participantes con 3 cartones pueden ganar el BINGO al completar los tres cartones.
-3. Los participantes con 1 o 2 cartones siguen participando por línea y cartón lleno, pero no son elegibles para bingo de tres cartones.
-4. Al terminar aparece una ventana con SEGUIR y ABANDONAR.
-5. SEGUIR (anfitrión): reinicia la ronda en la misma sala, limpia bolillas y premios y conserva participantes/cartones.
-6. SEGUIR (otros jugadores): registra que desean continuar y esperan que el anfitrión reinicie.
-7. ABANDONAR registra la salida voluntaria del jugador.
+CAMBIOS APLICADOS
+1. Se conserva el rango de bolillas del 1 al 90.
+2. 1 o 2 cartones: participan por línea y cartón lleno, no por bingo de tres cartones.
+3. Si hay exactamente un jugador con 3 cartones, el cartón lleno termina la partida.
+4. Si hay 2 o más jugadores con 3 cartones, se continúa después del primer cartón lleno hasta que uno complete sus tres cartones.
+5. Se quitaron los controles de recuperación manual del tirador. El sistema transfiere el turno automáticamente cuando detecta que el tirador perdió conexión, conservando bolillas y cartones.
+6. El sistema elige el tirador al azar y, si hay más de un participante, evita repetir al tirador de la ronda anterior.
+7. Se habilitó en reglas la opción SEGUIR para participantes y el reinicio de ronda por el anfitrión.
+8. Se incorporó el nuevo icono y la pantalla de apertura.
+9. El service worker busca actualizaciones cada cinco minutos mientras la app está abierta. Si detecta una nueva versión, actualiza al estar en la pantalla inicial para no interrumpir una partida en curso.
 
-IMPORTANTE:
-- Esta modificación se preparó sobre el index.html que adjuntaste.
-- El ZIP no incluye manifest.webmanifest, sw.js ni otros archivos que no adjuntaste.
-- Para actualizar el sitio, descomprimí el ZIP y reemplazá el index.html de tu repositorio por este archivo. No subas el ZIP como si fuera el sitio, porque Firebase Hosting necesita los archivos del proyecto descomprimidos.
-- Antes de publicar, probá la versión en una copia o sitio de prueba. No se pudo verificar desde aquí el comportamiento con tus reglas actuales de Firestore en producción.
+PUBLICACIÓN
+- Descomprimí este ZIP y subí el CONTENIDO de la carpeta loteria-grupal-main a la carpeta pública de Firebase Hosting, reemplazando los archivos anteriores.
+- Publicá también firestore.rules en Firebase Console > Firestore Database > Reglas y tocá Publicar.
+- No subas el ZIP comprimido a Hosting.
+- Los jugadores recibirán los cambios web al volver a la aplicación o al actualizarse el service worker. Las pestañas en una partida no se recargan hasta salir de ella para no interrumpirla.
+
+IMPORTANTE: el paquete se revisó estáticamente, pero no se desplegó en tu proyecto Firebase ni se pudo ejecutar una partida real contra tu base. Antes de usarlo con todos, probalo con dos dispositivos. El proyecto actual usa una sala general compartida; este paquete no incorpora todavía un panel administrativo separado ni un listado de múltiples salas libres.
