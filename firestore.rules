@@ -154,6 +154,26 @@ service cloud.firestore {
 
         ||
 
+        // El anfitrión prepara la siguiente ronda en la misma sala.
+        (
+          isHost(code)
+          && resource.data.status == 'finished'
+          && request.resource.data.status == 'waiting'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','previousCallerUid','callerUid','callerName','drawn','lastNumber',
+            'winnerUid','winnerName','finishedAt','startedAt','roundNumber','restartedAt'
+          ])
+          && request.resource.data.previousCallerUid == resource.data.callerUid
+          && request.resource.data.callerUid == null
+          && request.resource.data.callerName == ''
+          && request.resource.data.drawn is list
+          && request.resource.data.drawn.size() == 0
+          && request.resource.data.lastNumber == null
+          && request.resource.data.restartedAt is timestamp
+        )
+
+        ||
+
         // El tirador declara el final de la partida.
         (
           isCaller(code)
@@ -213,6 +233,13 @@ service cloud.firestore {
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leftAt'])
               && request.resource.data.leftAt is timestamp
               && request.resource.data.leftAt == request.time
+            )
+            ||
+            // Un participante puede indicar que quiere continuar tras el final.
+            (
+              get(roomPath(code)).data.status == 'finished'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['continueNextGame'])
+              && request.resource.data.continueNextGame is bool
             )
           );
 
