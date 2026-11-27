@@ -453,27 +453,29 @@ async function continueGame(){
   }catch(e){console.error(e);alert('No se pudo reiniciar la partida: '+e.message)}
 }
 async function abandonGame(){
-  // El botón ABANDONAR ya expresa la decisión: no pedir una segunda confirmación.
+  // ABANDONAR también es una acción directa, sin una segunda confirmación.
   $('celebration').classList.remove('show');
-  await exitRoom(false);
+  await exitRoom();
 }
-async function exitRoom(askConfirmation=true){
-  if(!roomCode||!uid){cleanupRoom();return;}
-  if(askConfirmation&&!confirm('¿Querés salir definitivamente de esta partida? Si confirmás, no podrás volver a entrar hasta una partida nueva. Si solo cerrás la aplicación o perdés Internet, podrás regresar.'))return;
+async function exitRoom(){
+  // SALIR DE LA PARTIDA: un solo toque, sin confirmaciones ni pantallas intermedias.
+  if(!roomCode||!uid){cleanupRoom();renderLobby();return;}
   const code=roomCode;
   if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null;}
+  hasExplicitlyLeft=true;canRejoinActive=false;
   try{
     const mine=await getDoc(playerRef(code,uid));
     if(mine.exists()&&!mine.data().leftAt)await updateDoc(playerRef(code,uid),{leftAt:serverTimestamp()});
-    hasExplicitlyLeft=true;canRejoinActive=false;cleanupRoom();renderLobby();
   }catch(e){
-    console.error('No se pudo registrar la salida voluntaria:',e);
-    $('msg').textContent='No se pudo registrar la salida. Revisá tu conexión y volvé a intentar desde SALIR DE LA PARTIDA.';
-    // No reabrir el cartel de seguir/abandonar: el usuario ya eligió abandonar.
-    alert('No se pudo registrar tu salida. La partida sigue abierta; revisá la conexión e intentá nuevamente.');
+    // Si Firebase falla, igualmente se permite volver al inicio en este teléfono.
+    console.warn('No se pudo guardar la salida en Firebase; se sale localmente:',e.message);
+  }finally{
+    $('celebration').classList.remove('show');
+    cleanupRoom();
+    renderLobby();
   }
 }
-$('start').addEventListener('click',()=>{unlockVoice();createRoom()});$('join').addEventListener('click',()=>{unlockVoice();joinRoom()});$('begin').addEventListener('click',beginGame);$('draw').addEventListener('click',draw);$('back').addEventListener('click',exitRoom);
+$('start').addEventListener('click',()=>{unlockVoice();createRoom()});$('join').addEventListener('click',()=>{unlockVoice();joinRoom()});$('begin').addEventListener('click',beginGame);$('draw').addEventListener('click',draw);$('back').addEventListener('click',()=>exitRoom());
 document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>{qty=+b.dataset.q;document.querySelectorAll('[data-q]').forEach(x=>x.classList.toggle('active',x===b))}));
 
 // Sonidos y celebración conservados del juego original.
