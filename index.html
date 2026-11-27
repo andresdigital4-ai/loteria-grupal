@@ -226,6 +226,8 @@ async function enterRoom(code){
       announcedLineWinners=new Set();announcedFullWinners=new Set();
       lastSpokenNumber=null;hasInitialRoomSnapshot=false;
       $('celebration').classList.remove('show');$('prizebox').classList.add('hidden');
+      $('continueGame').disabled=false;$('continueGame').textContent='▶️ SEGUIR';
+      $('celebrateText').textContent='¡Felicitaciones!';
     }
     const nextCaller=roomData.callerUid||null;
     if(previousCaller&&nextCaller&&previousCaller!==nextCaller&&roomData.status==='active'){
@@ -424,8 +426,12 @@ async function continueGame(){
   if(uid!==roomData.hostUid){
     try{
       await updateDoc(playerRef(roomCode,uid),{continueNextGame:true});
-      $('celebration').classList.remove('show');
-      $('msg').textContent='Marcaste SEGUIR. Esperá a que el anfitrión inicie la próxima partida.';
+      // Mantener visible la decisión y la salida evita dejar al jugador
+      // en una pantalla sin explicación mientras espera al anfitrión.
+      $('celebrateText').textContent='¡Listo! Tu decisión quedó guardada. Esperando que el anfitrión inicie la próxima partida. Si no desea continuar, todavía podés ABANDONAR.';
+      $('continueGame').textContent='✓ SEGUIR REGISTRADO';
+      $('continueGame').disabled=true;
+      $('msg').textContent='Tu decisión quedó guardada. El anfitrión debe iniciar la próxima partida.';
     }catch(e){alert('No se pudo registrar que querés seguir: '+e.message)}
     return;
   }
