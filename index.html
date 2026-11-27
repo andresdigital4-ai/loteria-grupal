@@ -4,9 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#17104b">
+<meta name="application-name" content="Lotería Grupal">
+<meta name="apple-mobile-web-app-title" content="Lotería Grupal">
+<link rel="apple-touch-icon" href="./icon-192.png?v=20261127-2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="manifest" href="./manifest.webmanifest">
+<link rel="manifest" href="./manifest.webmanifest?v=20261127-2">
 <title>Lotería grupal 1–90</title>
 <style>
 :root{--navy:#11103e;--purple:#5423a8;--blue:#1769d2;--gold:#ffd447;--green:#16b85b;--red:#f04c62;--ink:#17153d}
@@ -37,11 +40,13 @@ button{border:0;border-radius:12px;padding:13px 18px;font:800 16px inherit;font-
 @keyframes fall{to{transform:translateY(110vh) rotate(900deg);opacity:.9}}
 @keyframes pop{from{transform:scale(.65);opacity:0}to{transform:scale(1);opacity:1}}
 @keyframes bounce{to{transform:translateY(-9px) rotate(5deg)}}
+#appSplash{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:18px;background:radial-gradient(circle,#30106f 0%,#09051f 78%);transition:opacity .45s ease,visibility .45s ease}#appSplash.hide{opacity:0;visibility:hidden;pointer-events:none}#appSplash img{width:min(92vw,620px);max-height:88vh;object-fit:contain;filter:drop-shadow(0 0 28px #ffbf27)}
 footer{text-align:center;color:#bdb9ef;font-size:12px;padding:18px}
 @media(max-width:520px){.panel{padding:14px}.board{gap:3px}.ball{border-width:1px}.host{width:58px;height:58px;font-size:34px}}
 </style>
 </head>
 <body>
+<div id="appSplash" aria-label="Abriendo Lotería Grupal"><img src="./splash.png?v=20261127-2" alt="Lotería Grupal"></div>
 <header><div class="brand"><div class="host" aria-label="Presentadora caricaturizada">🎤</div><div><h1>LOTERÍA GRUPAL 1–90</h1><p>¡Que empiece la diversión!</p></div><div class="host" aria-hidden="true">🎱</div></div></header>
 <main>
 <section id="setup" class="panel">
@@ -55,7 +60,7 @@ footer{text-align:center;color:#bdb9ef;font-size:12px;padding:18px}
 <div class="row" style="margin-top:14px"><button id="install" class="gold" type="button">📲 Instalar aplicación</button><button id="shareApp" class="purple" type="button">🔗 Compartir aplicación</button></div>
 </section>
 <section id="game" class="hidden">
-<div class="panel"><div class="row"><h2>🎯 PARTIDA EN JUEGO</h2><button id="soundToggle" class="gold" type="button">🔊 Sonido activado</button></div><div class="status"><span id="roomLabel" class="hidden"></span><span id="roomState">Esperando jugadores</span></div><div id="playersList" class="status">Cargando participantes…</div><button id="begin" class="green" style="width:100%;margin:8px 0">🎲 ELEGIR TIRADOR Y COMENZAR</button><button id="recoverCaller" class="gold hidden" type="button" style="width:100%;margin:8px 0">🔄 RECUPERAR TIRADOR DESCONECTADO</button><div class="tirador"><strong>TIRADOR ELEGIDO POR EL SISTEMA</strong><span id="caller">—</span></div><div id="msg" class="status">Preparados… ¡mucha suerte!</div></div>
+<div class="panel"><div class="row"><h2>🎯 PARTIDA EN JUEGO</h2><button id="soundToggle" class="gold" type="button">🔊 Sonido activado</button></div><div class="status"><span id="roomLabel" class="hidden"></span><span id="roomState">Esperando jugadores</span></div><div id="playersList" class="status">Cargando participantes…</div><button id="begin" class="green" style="width:100%;margin:8px 0">🎲 ELEGIR TIRADOR Y COMENZAR</button><div class="tirador"><strong>TIRADOR ELEGIDO POR EL SISTEMA</strong><span id="caller">—</span></div><div id="msg" class="status">Preparados… ¡mucha suerte!</div></div>
 <div class="panel"><h2>🎱 Bolillas extraídas</h2><div id="lastballs" class="drawnballs"><span class="hint">Todavía no salió ninguna bolilla</span></div><div class="row" style="margin-top:14px"><button id="draw" class="green" disabled>EXTRAER 1 BOLILLA</button><button id="back" class="purple">SALIR DE LA PARTIDA</button></div><div class="hint">Solo el tirador elegido puede extraer bolillas. No se repiten números.</div></div>
 <div class="panel"><h2>🔢 Tablero del 1 al 90</h2><div id="board" class="board"></div></div>
 <div class="panel"><h2>🏆 Mis cartones</h2><div id="tickets" class="cards"></div></div>
@@ -280,31 +285,11 @@ async function attemptAutomaticCallerTransfer(){
 
 function renderPlayers(){ $('playersList').innerHTML='<strong>Participantes ('+players.filter(p=>!p.leftAt).length+' activos)</strong><br>'+players.map(p=>'👤 '+escapeHtml(p.name)+(p.uid===roomData?.hostUid?' ⭐ Anfitrión':'')+(p.continueNextGame?' — quiere seguir':'')+(p.leftAt?' — Salió de la partida':'')).join('<br>'); }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function renderRoom(){if(!roomData)return;$('caller').textContent=caller||'Se elegirá al comenzar';$('roomState').textContent=roomData.status==='waiting'?'Esperando jugadores':roomData.status==='active'?'Partida en curso':'Partida terminada';$('begin').classList.toggle('hidden',!(uid===roomData.hostUid&&roomData.status==='waiting'));$('recoverCaller').classList.add('hidden');$('draw').disabled=!(roomData.status==='active'&&roomData.callerUid===uid&&drawn.length<90);$('msg').textContent=roomData.status==='waiting'?'Compartí el enlace de invitación para que se unan los participantes.':roomData.status==='finished'?'¡La partida terminó! Ganador(es): '+(roomData.winnerName||''):roomData.callerUid===uid?'¡Es tu turno! Podés extraer una bolilla.':'El tirador está jugando. Si pierde la conexión, el sistema elegirá automáticamente a otro participante.';
+function renderRoom(){if(!roomData)return;$('caller').textContent=caller||'Se elegirá al comenzar';$('roomState').textContent=roomData.status==='waiting'?'Esperando jugadores':roomData.status==='active'?'Partida en curso':'Partida terminada';$('begin').classList.toggle('hidden',!(uid===roomData.hostUid&&roomData.status==='waiting'));$('draw').disabled=!(roomData.status==='active'&&roomData.callerUid===uid&&drawn.length<90);$('msg').textContent=roomData.status==='waiting'?'Compartí el enlace de invitación para que se unan los participantes.':roomData.status==='finished'?'¡La partida terminó! Ganador(es): '+(roomData.winnerName||''):roomData.callerUid===uid?'¡Es tu turno! Podés extraer una bolilla.':'El tirador está jugando. Si pierde la conexión, el sistema elegirá automáticamente a otro participante.';
   $('board').innerHTML=Array.from({length:90},(_,i)=>`<div class="ball ${drawn.includes(i+1)?'drawn':''}">${i+1}</div>`).join('');
   $('lastballs').innerHTML=drawn.length?drawn.slice(-3).map(n=>`<div class="bigball">${n}</div>`).join(''):'<span class="hint">Todavía no salió ninguna bolilla</span>';renderTickets();checkPrizes();}
 function renderTickets(){ $('tickets').innerHTML='';myCards.forEach((g,i)=>{const d=document.createElement('div');d.className='ticket';d.innerHTML=`<h3>CARTÓN ${i+1}</h3><div class="gridticket">${g.flat().map(n=>`<div class="cell ${n===null?'blank':''} ${n&&drawn.includes(n)?'hit':''}">${n??''}</div>`).join('')}</div>`;$('tickets').appendChild(d)}); }
-async function beginGame(){if(!roomData||uid!==roomData.hostUid||roomData.status!=='waiting')return;const activePlayers=players.filter(p=>!p.leftAt);if(activePlayers.length<1){alert('Todavía no hay participantes activos.');return}const chosen=activePlayers[Math.floor(Math.random()*activePlayers.length)];try{await updateDoc(roomRef(),{callerUid:chosen.uid,callerName:chosen.name,status:'active',startedAt:serverTimestamp()})}catch(e){alert('No se pudo iniciar: '+e.message)}}
-async function recoverCaller(){
-  if(!roomData||uid!==roomData.hostUid||roomData.status!=='active'||roomData.callerUid===uid)return;
-  const previousName=roomData.callerName||'el tirador actual';
-  if(!confirm('¿Confirmás que '+previousName+' se desconectó o no puede continuar? Se elegirá otro tirador al azar y se conservarán todas las bolillas y cartones.'))return;
-  const candidates=players.filter(p=>p.uid&&p.uid!==roomData.callerUid);
-  if(!candidates.length){alert('No hay otro participante disponible para tomar el turno.');return;}
-  const chosen=candidates[Math.floor(Math.random()*candidates.length)];
-  try{
-    await runTransaction(db,async tx=>{
-      const snap=await tx.get(roomRef());
-      if(!snap.exists())throw new Error('La partida ya no existe.');
-      const current=snap.data();
-      if(current.status!=='active'||current.hostUid!==uid)throw new Error('La partida cambió o ya no sos el anfitrión.');
-      if(current.callerUid===uid)throw new Error('El anfitrión ya es el tirador.');
-      tx.update(roomRef(),{callerUid:chosen.uid,callerName:chosen.name,callerChangedAt:serverTimestamp()});
-    });
-    alert('¡Turno recuperado! '+chosen.name+' es el nuevo tirador.');
-    speak('Atención. El nuevo tirador es '+chosen.name);
-  }catch(e){console.error(e);alert('No se pudo recuperar el turno: '+e.message);}
-}
+async function beginGame(){if(!roomData||uid!==roomData.hostUid||roomData.status!=='waiting')return;const activePlayers=players.filter(p=>!p.leftAt);if(activePlayers.length<1){alert('Todavía no hay participantes activos.');return}const previous=roomData.previousCallerUid||null;const pool=activePlayers.length>1?activePlayers.filter(p=>p.uid!==previous):activePlayers;const candidates=pool.length?pool:activePlayers;const chosen=candidates[Math.floor(Math.random()*candidates.length)];try{await updateDoc(roomRef(),{callerUid:chosen.uid,callerName:chosen.name,status:'active',startedAt:serverTimestamp()})}catch(e){alert('No se pudo iniciar: '+e.message)}}
 async function draw(){if(!roomData||roomData.status!=='active'||roomData.callerUid!==uid)return;const available=Array.from({length:90},(_,i)=>i+1).filter(n=>!drawn.includes(n));if(!available.length)return;const number=available[Math.floor(Math.random()*available.length)];try{await runTransaction(db,async tx=>{const snap=await tx.get(roomRef());if(!snap.exists())throw new Error('La partida no existe');const data=snap.data();if(data.status!=='active'||data.callerUid!==uid)throw new Error('Ya no es tu turno');const current=data.drawn||[];if(current.includes(number))throw new Error('Ese número ya salió');tx.update(roomRef(),{drawn:[...current,number],lastNumber:number});});}catch(e){console.error(e);$('msg').textContent=e.message}}
 function cardNumbers(card){return (card||[]).flat().filter(n=>Number.isInteger(n)&&n>=1&&n<=90)}
 function isFullCard(card,numbers=drawn){const nums=cardNumbers(card);return nums.length===15&&nums.every(n=>numbers.includes(n))}
@@ -317,7 +302,9 @@ function isFullCard(card,numbers=drawn){const nums=cardNumbers(card);return nums
 function findFullCardWinners(numbers=drawn){return players.filter(p=>!p.leftAt&&(p.cards||[]).some(card=>isFullCard(card,numbers)))}
 function findGrandWinners(numbers=drawn){
   const threeCardPlayers=players.filter(p=>!p.leftAt&&(p.cards||[]).length===3);
-  if(threeCardPlayers.length>=1)return threeCardPlayers.filter(p=>(p.cards||[]).length===3&&p.cards.every(card=>isFullCard(card,numbers)));
+  // Con un solo jugador de 3 cartones, el cartón lleno termina la partida.
+  // Con dos o más jugadores de 3 cartones, se continúa hasta que uno complete los tres.
+  if(threeCardPlayers.length>=2)return threeCardPlayers.filter(p=>p.cards.every(card=>isFullCard(card,numbers)));
   return findFullCardWinners(numbers);
 }
 function findLineWinners(numbers=drawn){
@@ -346,7 +333,7 @@ function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=fals
   const cleanFinal=[...new Set(finalWinners.map(p=>p.name).filter(Boolean))];
   const box=$('prizebox');
   const section=(title,names)=>names.length?`<div style="margin:8px 0"><strong>${title}</strong>${names.map(n=>`<span class="winner-name">🏆 ${escapeHtml(n)} 🏆</span>`).join('')}</div>`:'';
-  box.innerHTML=section('🥳 ¡LÍNEA COMPLETA!',cleanLine)+section('🎉 ¡CARTÓN LLENO!',cleanFull)+section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡BINGO / CARTÓN LLENO!',cleanFinal);
+  box.innerHTML=section('🥳 ¡LÍNEA COMPLETA!',cleanLine)+section('🎉 ¡CARTÓN LLENO!',cleanFull)+section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡CARTÓN LLENO!',cleanFinal);
   if(!box.innerHTML&&fallbackName)box.innerHTML=section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡CARTÓN LLENO!',[fallbackName]);
   box.classList.remove('hidden');
   confetti(final);cheer(final?(isTriple?'triple':'full'):cleanFull.length?'full':'line');
@@ -359,7 +346,7 @@ function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=fals
   if(!speech.length&&fallbackName){speech.push('¡Tenemos un ganador!',fallbackName);}
   if(speech.length)setTimeout(()=>{speech.forEach((part,i)=>speak(part));speak('¡Felicitaciones a todos!');},900);
   if(final){
-    $('celebrateTitle').textContent=isTriple?'¡BINGO DE TRES CARTONES!':'¡BINGO COMPLETO!';
+    $('celebrateTitle').textContent=isTriple?'¡BINGO DE TRES CARTONES!':'¡CARTÓN LLENO!';
     $('championName').innerHTML=(cleanFinal.length?cleanFinal:[fallbackName].filter(Boolean)).map(escapeHtml).join('<br>');
     $('celebrateText').textContent=(cleanFinal.length>1?'¡TENEMOS VARIOS GANADORES!':'¡FELICITACIONES, GANADOR!');
     $('celebration').classList.add('show');
@@ -367,7 +354,7 @@ function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=fals
 }
 async function checkPrizes(){
   if(!roomData)return;
-  const tripleMode=players.filter(p=>!p.leftAt&&(p.cards||[]).length===3).length>=1;
+  const tripleMode=players.filter(p=>!p.leftAt&&(p.cards||[]).length===3).length>=2;
   if(roomData.status==='finished'){
     if(!players.length||bingoWon)return;
     bingoWon=true;
@@ -420,7 +407,7 @@ async function checkPrizes(){
     $('msg').textContent='Salieron las 90 bolillas y no hubo bingo. La partida necesita finalizarse desde las reglas de Firebase.';
   }
 }
-function cleanupRoom(){if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null;}if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();unsubRoom=unsubPlayers=null;roomCode=null;roomData=null;players=[];myCards=[];drawn=[];const url=new URL(location.href);url.searchParams.delete('room');history.replaceState({},'',url);$('game').classList.add('hidden');$('setup').classList.remove('hidden')}
+function cleanupRoom(){if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null;}if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();unsubRoom=unsubPlayers=null;roomCode=null;roomData=null;players=[];myCards=[];drawn=[];const url=new URL(location.href);url.searchParams.delete('room');history.replaceState({},'',url);$('game').classList.add('hidden');$('setup').classList.remove('hidden');if(window.__loteriaUpdatePending)location.reload()}
 async function continueGame(){
   if(!roomCode||!roomData||roomData.status!=='finished')return;
   // El anfitrión reinicia la misma sala. Los demás pueden indicar que quieren
@@ -436,7 +423,7 @@ async function continueGame(){
   if(!confirm('¿Iniciar una nueva partida en esta misma sala? Se reiniciarán las bolillas y los premios. Se conservarán los participantes y sus cartones.'))return;
   try{
     await updateDoc(roomRef(),{
-      status:'waiting',callerUid:null,callerName:'',drawn:[],lastNumber:null,
+      status:'waiting',previousCallerUid:roomData.callerUid||roomData.previousCallerUid||null,callerUid:null,callerName:'',drawn:[],lastNumber:null,
       winnerUid:null,winnerName:'',finishedAt:null,startedAt:null,
       roundNumber:(Number(roomData.roundNumber)||1)+1,
       restartedAt:serverTimestamp()
@@ -459,7 +446,7 @@ async function exitRoom(){
   try{await updateDoc(playerRef(roomCode,uid),{leftAt:serverTimestamp()});hasExplicitlyLeft=true;canRejoinActive=false;cleanupRoom();renderLobby();}
   catch(e){console.error('No se pudo registrar la salida voluntaria:',e);alert('No se pudo registrar tu salida. Seguís dentro de la partida; comprobá tu conexión e intentá nuevamente.');}
 }
-$('start').addEventListener('click',()=>{unlockVoice();createRoom()});$('join').addEventListener('click',()=>{unlockVoice();joinRoom()});$('begin').addEventListener('click',beginGame);$('recoverCaller').addEventListener('click',recoverCaller);$('draw').addEventListener('click',draw);$('back').addEventListener('click',exitRoom);
+$('start').addEventListener('click',()=>{unlockVoice();createRoom()});$('join').addEventListener('click',()=>{unlockVoice();joinRoom()});$('begin').addEventListener('click',beginGame);$('draw').addEventListener('click',draw);$('back').addEventListener('click',exitRoom);
 document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>{qty=+b.dataset.q;document.querySelectorAll('[data-q]').forEach(x=>x.classList.toggle('active',x===b))}));
 
 // Sonidos y celebración conservados del juego original.
@@ -508,6 +495,20 @@ $('shareApp').addEventListener('click',async()=>{
   const url=location.origin+location.pathname;
   try{if(navigator.share){await navigator.share({title:'Lotería Grupal 1–90',text:'Instalá la Lotería Grupal 1–90 y jugá con tus amigos.',url});}else if(navigator.clipboard){await navigator.clipboard.writeText(url);alert('Enlace copiado. Ahora podés compartirlo por WhatsApp.');}else{prompt('Copiá el enlace de la aplicación:',url);}}catch(e){if(e.name!=='AbortError')prompt('Copiá el enlace de la aplicación:',url);}
 });
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('No se pudo registrar el service worker',e)));}
+if('serviceWorker' in navigator){
+  let reloadingForUpdate=false;
+  const applyUpdateSafely=()=>{if(reloadingForUpdate)return;const inGame=!$('game').classList.contains('hidden');if(inGame){window.__loteriaUpdatePending=true;return;}reloadingForUpdate=true;location.reload();};
+  navigator.serviceWorker.addEventListener('controllerchange',applyUpdateSafely);
+  navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.type==='APP_UPDATED')applyUpdateSafely();});
+  window.addEventListener('load',async()=>{
+    try{
+      const registration=await navigator.serviceWorker.register('./sw.js?v=20261127-2');
+      registration.update().catch(()=>{});
+      if(registration.waiting)registration.waiting.postMessage({type:'SKIP_WAITING'});
+      setInterval(()=>registration.update().catch(()=>{}),5*60*1000);
+    }catch(e){console.warn('No se pudo registrar el service worker',e)}
+    setTimeout(()=>{$('appSplash')?.classList.add('hide');},900);
+  });
+}else{window.addEventListener('load',()=>setTimeout(()=>$('appSplash')?.classList.add('hide'),900));}
 onAuthStateChanged(auth,async user=>{if(user){uid=user.uid;$('connection').textContent='Conectado a Firebase. Sala general disponible.';watchLobby();renderLobby();}else{try{await signInAnonymously(auth)}catch(e){console.error(e);$('connection').textContent='No se pudo conectar. Revisá Authentication y las reglas de Firebase.'}}});
 </script></body></html>
