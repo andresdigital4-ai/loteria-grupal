@@ -2,14 +2,14 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17104b">
 <meta name="application-name" content="Lotería Grupal">
 <meta name="apple-mobile-web-app-title" content="Lotería Grupal">
-<link rel="apple-touch-icon" href="./icon-192.png?v=20261127-4">
+<link rel="apple-touch-icon" href="./icon-192.png?v=20261127-5">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="manifest" href="./manifest.webmanifest?v=20261127-4">
+<link rel="manifest" href="./manifest.webmanifest?v=20261127-5">
 <title>Lotería grupal 1–90</title>
 <script>
 // Capturar el evento de instalación lo antes posible: el módulo Firebase puede tardar en cargar.
@@ -49,13 +49,13 @@ button{border:0;border-radius:12px;padding:13px 18px;font:800 16px inherit;font-
 @keyframes fall{to{transform:translateY(110vh) rotate(900deg);opacity:.9}}
 @keyframes pop{from{transform:scale(.65);opacity:0}to{transform:scale(1);opacity:1}}
 @keyframes bounce{to{transform:translateY(-9px) rotate(5deg)}}
-#appSplash{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:12px;background:#10052e;transition:opacity .45s ease,visibility .45s ease}#appSplash.hide{opacity:0;visibility:hidden;pointer-events:none}#splashArt{position:relative;width:min(92vw,620px,calc(88vh * 563 / 977));aspect-ratio:563/977;filter:drop-shadow(0 0 22px #8c35ff)}#splashArt img{display:block;width:100%;height:100%;object-fit:contain}#splashProgressTrack{position:absolute;left:20.5%;top:83.45%;width:59%;height:2.15%;border-radius:999px;background:#1b0739;overflow:hidden}#splashProgressFill{height:100%;width:0%;border-radius:inherit;background:linear-gradient(90deg,#8c21ff,#ff42d0,#ffd447);box-shadow:0 0 10px #ff47d7,0 0 18px #ff42d0;animation:splashProgress 3.8s cubic-bezier(.2,.7,.25,1) forwards}@keyframes splashProgress{0%{width:0}78%{width:78%}100%{width:90%}}
+#appSplash{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:0;background:#10052e;overflow:hidden;transition:opacity .45s ease,visibility .45s ease}#appSplash.hide{opacity:0;visibility:hidden;pointer-events:none}#splashArt{position:relative;width:min(100vw,calc(100dvh * 563 / 977));max-height:100dvh;aspect-ratio:563/977;filter:drop-shadow(0 0 18px #8c35ff)}#splashArt img{display:block;width:100%;height:100%;object-fit:contain}#splashProgressTrack{position:absolute;left:20.5%;top:83.45%;width:59%;height:2.15%;border-radius:999px;background:#1b0739;overflow:hidden}#splashProgressFill{height:100%;width:0%;border-radius:inherit;background:linear-gradient(90deg,#8c21ff,#ff42d0,#ffd447);box-shadow:0 0 10px #ff47d7,0 0 18px #ff42d0;animation:splashProgress 3.8s cubic-bezier(.2,.7,.25,1) forwards}@keyframes splashProgress{0%{width:0}78%{width:78%}100%{width:90%}}
 footer{text-align:center;color:#bdb9ef;font-size:12px;padding:18px}
 @media(max-width:520px){.panel{padding:14px}.board{gap:3px}.ball{border-width:1px}.host{width:58px;height:58px;font-size:34px}}
 </style>
 </head>
 <body>
-<div id="appSplash" aria-label="Abriendo Lotería Grupal"><div id="splashArt"><img src="./splash.png?v=20261127-4" alt="Lotería Grupal. Bienvenido al juego"><div id="splashProgressTrack" aria-hidden="true"><div id="splashProgressFill"></div></div></div></div>
+<div id="appSplash" aria-label="Abriendo Lotería Grupal"><div id="splashArt"><img src="./splash.png?v=20261127-5" alt="Lotería Grupal. Bienvenido al juego"><div id="splashProgressTrack" aria-hidden="true"><div id="splashProgressFill"></div></div></div></div>
 <header><div class="brand"><div class="host" aria-label="Presentadora caricaturizada">🎤</div><div><h1>LOTERÍA GRUPAL 1–90</h1><p>¡Que empiece la diversión!</p></div><div class="host" aria-hidden="true">🎱</div></div></header>
 <main>
 <section id="setup" class="panel">
@@ -517,7 +517,7 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.type==='APP_UPDATED')applyUpdateSafely();});
   window.addEventListener('load',async()=>{
     try{
-      const registration=await navigator.serviceWorker.register('./sw.js?v=20261127-4');
+      const registration=await navigator.serviceWorker.register('./sw.js?v=20261127-5');
       registration.update().catch(()=>{});
       if(registration.waiting)registration.waiting.postMessage({type:'SKIP_WAITING'});
       setInterval(()=>registration.update().catch(()=>{}),5*60*1000);
