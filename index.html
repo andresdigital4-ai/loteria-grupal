@@ -313,9 +313,9 @@ function isFullCard(card,numbers=drawn){const nums=cardNumbers(card);return nums
 function findFullCardWinners(numbers=drawn){return players.filter(p=>!p.leftAt&&(p.cards||[]).some(card=>isFullCard(card,numbers)))}
 function findGrandWinners(numbers=drawn){
   const threeCardPlayers=players.filter(p=>!p.leftAt&&(p.cards||[]).length===3);
-  // Con un solo jugador de 3 cartones, el cartón lleno termina la partida.
-  // Con dos o más jugadores de 3 cartones, se continúa hasta que uno complete los tres.
-  if(threeCardPlayers.length>=2)return threeCardPlayers.filter(p=>p.cards.every(card=>isFullCard(card,numbers)));
+  // Cualquier jugador con 3 cartones participa por bingo: debe completar sus tres cartones.
+  // Los jugadores con 1 o 2 cartones solo compiten por línea y cartón lleno.
+  if(threeCardPlayers.length>=1)return threeCardPlayers.filter(p=>p.cards.every(card=>isFullCard(card,numbers)));
   return findFullCardWinners(numbers);
 }
 function findLineWinners(numbers=drawn){
@@ -344,7 +344,9 @@ function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=fals
   const cleanFinal=[...new Set(finalWinners.map(p=>p.name).filter(Boolean))];
   const box=$('prizebox');
   const section=(title,names)=>names.length?`<div style="margin:8px 0"><strong>${title}</strong>${names.map(n=>`<span class="winner-name">🏆 ${escapeHtml(n)} 🏆</span>`).join('')}</div>`:'';
-  box.innerHTML=section('🥳 ¡LÍNEA COMPLETA!',cleanLine)+section('🎉 ¡CARTÓN LLENO!',cleanFull)+section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡CARTÓN LLENO!',cleanFinal);
+  // El premio final de un jugador con 1 o 2 cartones es CARTÓN LLENO;
+  // no debe repetirse bajo el rótulo de bingo. Solo se anuncia bingo en modo de 3 cartones.
+  box.innerHTML=section('🥳 ¡LÍNEA COMPLETA!',cleanLine)+section('🎉 ¡CARTÓN LLENO!',cleanFull)+(isTriple?section('🏆 ¡BINGO DE TRES CARTONES!',cleanFinal):'');
   if(!box.innerHTML&&fallbackName)box.innerHTML=section(isTriple?'🏆 ¡BINGO DE TRES CARTONES!':'🏆 ¡CARTÓN LLENO!',[fallbackName]);
   box.classList.remove('hidden');
   confetti(final);cheer(final?(isTriple?'triple':'full'):cleanFull.length?'full':'line');
@@ -353,19 +355,20 @@ function showAwards({lineWinners=[],fullWinners=[],finalWinners=[],isTriple=fals
   const announceGroup=(title,names)=>{if(names.length){speech.push(title);names.forEach(name=>speech.push(name));}};
   announceGroup('¡Ganadores de línea!',cleanLine);
   announceGroup('¡Ganadores de cartón lleno!',cleanFull);
-  announceGroup(isTriple?'¡Ganadores de bingo de tres cartones!':'¡Ganadores de bingo!',cleanFinal);
+  if(isTriple)announceGroup('¡Ganadores de bingo de tres cartones!',cleanFinal);
   if(!speech.length&&fallbackName){speech.push('¡Tenemos un ganador!',fallbackName);}
   if(speech.length)setTimeout(()=>{speech.forEach((part,i)=>speak(part));speak('¡Felicitaciones a todos!');},900);
   if(final){
     $('celebrateTitle').textContent=isTriple?'¡BINGO DE TRES CARTONES!':'¡CARTÓN LLENO!';
-    $('championName').innerHTML=(cleanFinal.length?cleanFinal:[fallbackName].filter(Boolean)).map(escapeHtml).join('<br>');
+    const champions=isTriple?cleanFinal:(cleanFull.length?cleanFull:cleanFinal);
+    $('championName').innerHTML=(champions.length?champions:[fallbackName].filter(Boolean)).map(escapeHtml).join('<br>');
     $('celebrateText').textContent=(cleanFinal.length>1?'¡TENEMOS VARIOS GANADORES!':'¡FELICITACIONES, GANADOR!');
     $('celebration').classList.add('show');
   }
 }
 async function checkPrizes(){
   if(!roomData)return;
-  const tripleMode=players.filter(p=>!p.leftAt&&(p.cards||[]).length===3).length>=2;
+  const tripleMode=players.some(p=>!p.leftAt&&(p.cards||[]).length===3);
   if(roomData.status==='finished'){
     if(!players.length||bingoWon)return;
     bingoWon=true;
@@ -450,16 +453,25 @@ async function continueGame(){
   }catch(e){console.error(e);alert('No se pudo reiniciar la partida: '+e.message)}
 }
 async function abandonGame(){
-  const currentRoom=roomCode;
+  // El botón ABANDONAR ya expresa la decisión: no pedir una segunda confirmación.
   $('celebration').classList.remove('show');
-  await exitRoom();
-  if(roomCode===currentRoom)$('celebration').classList.add('show');
+  await exitRoom(false);
 }
-async function exitRoom(){
+async function exitRoom(askConfirmation=true){
   if(!roomCode||!uid){cleanupRoom();return;}
-  if(!confirm('¿Querés salir definitivamente de esta partida? Si confirmás, no podrás volver a entrar hasta una partida nueva. Si solo cerrás la aplicación o perdés Internet, podrás regresar.'))return;
-  try{await updateDoc(playerRef(roomCode,uid),{leftAt:serverTimestamp()});hasExplicitlyLeft=true;canRejoinActive=false;cleanupRoom();renderLobby();}
-  catch(e){console.error('No se pudo registrar la salida voluntaria:',e);alert('No se pudo registrar tu salida. Seguís dentro de la partida; comprobá tu conexión e intentá nuevamente.');}
+  if(askConfirmation&&!confirm('¿Querés salir definitivamente de esta partida? Si confirmás, no podrás volver a entrar hasta una partida nueva. Si solo cerrás la aplicación o perdés Internet, podrás regresar.'))return;
+  const code=roomCode;
+  if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null;}
+  try{
+    const mine=await getDoc(playerRef(code,uid));
+    if(mine.exists()&&!mine.data().leftAt)await updateDoc(playerRef(code,uid),{leftAt:serverTimestamp()});
+    hasExplicitlyLeft=true;canRejoinActive=false;cleanupRoom();renderLobby();
+  }catch(e){
+    console.error('No se pudo registrar la salida voluntaria:',e);
+    $('msg').textContent='No se pudo registrar la salida. Revisá tu conexión y volvé a intentar desde SALIR DE LA PARTIDA.';
+    // No reabrir el cartel de seguir/abandonar: el usuario ya eligió abandonar.
+    alert('No se pudo registrar tu salida. La partida sigue abierta; revisá la conexión e intentá nuevamente.');
+  }
 }
 $('start').addEventListener('click',()=>{unlockVoice();createRoom()});$('join').addEventListener('click',()=>{unlockVoice();joinRoom()});$('begin').addEventListener('click',beginGame);$('draw').addEventListener('click',draw);$('back').addEventListener('click',exitRoom);
 document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>{qty=+b.dataset.q;document.querySelectorAll('[data-q]').forEach(x=>x.classList.toggle('active',x===b))}));
