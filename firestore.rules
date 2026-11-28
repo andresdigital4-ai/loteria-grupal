@@ -1,0 +1,274 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roomPath(code) {
+      return /databases/$(database)/documents/rooms/$(code);
+    }
+
+    function playerPath(code, uid) {
+      return /databases/$(database)/documents/rooms/$(code)/players/$(uid);
+    }
+
+    function roomExists(code) {
+      return exists(roomPath(code));
+    }
+
+    function roomExistsAfter(code) {
+      return existsAfter(roomPath(code));
+    }
+
+    function isHost(code) {
+      return signedIn()
+        && roomExists(code)
+        && get(roomPath(code)).data.hostUid == request.auth.uid;
+    }
+
+    function isCaller(code) {
+      return signedIn()
+        && roomExists(code)
+        && get(roomPath(code)).data.callerUid == request.auth.uid;
+    }
+
+    function isParticipant(code) {
+      return signedIn()
+        && exists(playerPath(code, request.auth.uid))
+        && get(playerPath(code, request.auth.uid)).data.uid == request.auth.uid
+        && !get(playerPath(code, request.auth.uid)).data.keys().hasAny(['leftAt']);
+    }
+
+    // Sala general: una sola partida activa.
+    match /system/{documentId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && documentId == 'activeGame'
+        && request.resource.data.keys().hasOnly(['roomCode','hostUid','updatedAt'])
+        && request.resource.data.roomCode is string
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.updatedAt is timestamp
+        && existsAfter(roomPath(request.resource.data.roomCode))
+        && getAfter(roomPath(request.resource.data.roomCode)).data.hostUid == request.auth.uid
+        && getAfter(roomPath(request.resource.data.roomCode)).data.status == 'waiting';
+
+      allow update: if signedIn()
+        && documentId == 'activeGame'
+        && request.resource.data.keys().hasOnly(['roomCode','hostUid','updatedAt'])
+        && request.resource.data.roomCode is string
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.updatedAt is timestamp
+        && existsAfter(roomPath(request.resource.data.roomCode))
+        && getAfter(roomPath(request.resource.data.roomCode)).data.hostUid == request.auth.uid
+        && getAfter(roomPath(request.resource.data.roomCode)).data.status == 'waiting'
+        && (
+          !exists(roomPath(resource.data.roomCode))
+          || get(roomPath(resource.data.roomCode)).data.status == 'finished'
+        );
+
+      allow delete: if false;
+    }
+
+    // Partidas.
+    match /rooms/{code} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'hostUid', 'callerUid', 'callerName', 'status', 'drawn', 'lastNumber', 'createdAt'
+        ])
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.callerUid == null
+        && request.resource.data.callerName == ''
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.drawn is list
+        && request.resource.data.drawn.size() == 0
+        && request.resource.data.lastNumber == null
+        && request.resource.data.createdAt is timestamp;
+
+      allow read: if signedIn();
+
+      allow update: if signedIn() && (
+        // El anfitrión inicia la partida.
+        (
+          isHost(code)
+          && resource.data.status == 'waiting'
+          && request.resource.data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status','callerUid','callerName','startedAt'])
+          && request.resource.data.callerUid is string
+          && exists(playerPath(code, request.resource.data.callerUid))
+          && get(playerPath(code, request.resource.data.callerUid)).data.name == request.resource.data.callerName
+          && request.resource.data.startedAt is timestamp
+        )
+
+        ||
+
+        // El tirador extrae una bolilla.
+        (
+          isCaller(code)
+          && resource.data.status == 'active'
+          && request.resource.data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['drawn','lastNumber'])
+          && request.resource.data.drawn is list
+          && request.resource.data.drawn.size() == resource.data.drawn.size() + 1
+          && request.resource.data.drawn.size() <= 90
+          && request.resource.data.drawn.hasAll(resource.data.drawn)
+          && request.resource.data.lastNumber is int
+          && request.resource.data.lastNumber >= 1
+          && request.resource.data.lastNumber <= 90
+          && request.resource.data.drawn.hasAny([request.resource.data.lastNumber])
+          && !resource.data.drawn.hasAny([request.resource.data.lastNumber])
+        )
+
+        ||
+
+        // Transferencia automática: cualquier participante puede ejecutarla,
+        // pero solo si el tirador anterior lleva 60 segundos sin señal y el nuevo
+        // tirador envió una señal en los últimos 45 segundos.
+        (
+          isParticipant(code)
+          && resource.data.status == 'active'
+          && request.resource.data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['callerUid','callerName','callerChangedAt'])
+          && request.resource.data.callerUid is string
+          && request.resource.data.callerUid != resource.data.callerUid
+          && exists(playerPath(code, resource.data.callerUid))
+          && (
+            (get(playerPath(code, resource.data.callerUid)).data.keys().hasAny(['leftAt'])
+              && get(playerPath(code, resource.data.callerUid)).data.leftAt is timestamp)
+            ||
+            (get(playerPath(code, resource.data.callerUid)).data.lastSeenAt is timestamp
+              && get(playerPath(code, resource.data.callerUid)).data.lastSeenAt <= request.time - duration.value(60, 's'))
+          )
+          && exists(playerPath(code, request.resource.data.callerUid))
+          && get(playerPath(code, request.resource.data.callerUid)).data.lastSeenAt is timestamp
+          && get(playerPath(code, request.resource.data.callerUid)).data.lastSeenAt >= request.time - duration.value(45, 's')
+          && !get(playerPath(code, request.resource.data.callerUid)).data.keys().hasAny(['leftAt'])
+          && get(playerPath(code, request.resource.data.callerUid)).data.name == request.resource.data.callerName
+          && request.resource.data.callerChangedAt is timestamp
+        )
+
+        ||
+
+        // Cualquier participante activo puede iniciar la nueva ronda directamente.
+        (
+          isParticipant(code)
+          && resource.data.status == 'finished'
+          && request.resource.data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status','previousCallerUid','callerUid','callerName','drawn','lastNumber',
+            'winnerUid','winnerName','finishedAt','startedAt','roundNumber','restartedAt'
+          ])
+          && request.resource.data.previousCallerUid == resource.data.callerUid
+          && request.resource.data.callerUid is string
+          && exists(playerPath(code, request.resource.data.callerUid))
+          && !get(playerPath(code, request.resource.data.callerUid)).data.keys().hasAny(['leftAt'])
+          && get(playerPath(code, request.resource.data.callerUid)).data.name == request.resource.data.callerName
+          && request.resource.data.drawn is list
+          && request.resource.data.drawn.size() == 0
+          && request.resource.data.lastNumber == null
+          && request.resource.data.startedAt is timestamp
+          && request.resource.data.restartedAt is timestamp
+        )
+
+        ||
+
+        // El tirador declara el final de la partida.
+        (
+          isCaller(code)
+          && resource.data.status == 'active'
+          && request.resource.data.status == 'finished'
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status','winnerUid','winnerName','finishedAt'])
+          && request.resource.data.winnerUid is string
+          && exists(playerPath(code, request.resource.data.winnerUid))
+          && get(playerPath(code, request.resource.data.winnerUid)).data.name == request.resource.data.winnerName
+          && request.resource.data.finishedAt is timestamp
+        )
+      );
+
+      allow delete: if isHost(code)
+        && resource.data.status == 'waiting';
+
+      // Jugadores.
+      match /players/{playerId} {
+        allow read: if signedIn();
+
+        allow create: if signedIn()
+          && playerId == request.auth.uid
+          && roomExistsAfter(code)
+          && getAfter(roomPath(code)).data.status == 'waiting'
+          && request.resource.data.keys().hasOnly([
+            'uid', 'name', 'cards', 'cardCount', 'joinedAt'
+          ])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 1
+          && request.resource.data.name.size() <= 50
+          && request.resource.data.cards is list
+          && request.resource.data.cardCount is int
+          && request.resource.data.cardCount >= 1
+          && request.resource.data.cardCount <= 3
+          && request.resource.data.cards.size() == request.resource.data.cardCount
+          && request.resource.data.joinedAt is timestamp;
+
+        // Cada jugador solo puede actualizar su propia señal de conexión.
+        // No puede modificar nombre, cartones ni cantidad de cartones.
+        allow update: if signedIn()
+          && playerId == request.auth.uid
+          && resource.data.uid == request.auth.uid
+          && (
+            // Latido: solo mientras el participante no haya salido voluntariamente.
+            (
+              !resource.data.keys().hasAny(['leftAt'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt'])
+              && request.resource.data.lastSeenAt is timestamp
+              && request.resource.data.lastSeenAt == request.time
+            )
+            ||
+            // Salida voluntaria: se registra una sola vez y no puede revertirse.
+            (
+              !resource.data.keys().hasAny(['leftAt'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leftAt'])
+              && request.resource.data.leftAt is timestamp
+              && request.resource.data.leftAt == request.time
+            )
+            ||
+            // Un participante puede indicar que quiere continuar tras el final.
+            (
+              get(roomPath(code)).data.status == 'finished'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['continueNextGame'])
+              && request.resource.data.continueNextGame is bool
+            )
+          );
+
+        allow delete: if isHost(code)
+          && get(roomPath(code)).data.status == 'waiting';
+      }
+
+      // Reservas de cartones únicos.
+      match /cardReservations/{cardKey} {
+        allow read: if signedIn();
+
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['uid','card','createdAt'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.card is string
+          && roomExistsAfter(code)
+          && getAfter(roomPath(code)).data.status == 'waiting'
+          && request.resource.data.createdAt is timestamp
+          && existsAfter(playerPath(code, request.auth.uid))
+          && getAfter(playerPath(code, request.auth.uid)).data.cards.hasAny([request.resource.data.card]);
+
+        allow update: if false;
+
+        allow delete: if isHost(code)
+          && get(roomPath(code)).data.status == 'waiting';
+      }
+    }
+  }
+}
